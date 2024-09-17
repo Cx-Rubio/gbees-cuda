@@ -10,7 +10,7 @@
 #include "config.h"
 #include "macro.h"
 #include "device.h"
-#include "gbees.h"
+#include "kernel.h"
 
 /** Register ctrl-C handler */
 void registerSignalHandlers(void);
@@ -51,7 +51,8 @@ int main(int argc, char **argv) {
     // call the kernel
     int blocks = 1;
     int threads = 1;
-    kernel<<<blocks,threads>>>();
+    int maxCells = 1024;
+    kernel<<<blocks,threads>>>(maxCells);
 
     cudaDeviceSynchronize();
 
