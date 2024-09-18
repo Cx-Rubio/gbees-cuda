@@ -3,8 +3,13 @@
 #include "memory.h"
 #include "macro.h"
 
-// FIXME find state from int to int32_t
-// FIXME fix start arrays from 1 and not from 0 ?
+/** --- Private functions declaration --- */
+static __device__ uint32_t computeHash(int32_t* state);
+static __device__ bool equalState(int32_t* state1, int32_t* state2);
+static __device__ void copyKey(int32_t* src, int32_t* dst);
+static __device__ void copyCell(Cell* src, Cell* dst);
+
+
 
 /** --- Device global memory allocations --- */
 
@@ -33,41 +38,53 @@ void freeHashTableDevice(HashTable* hashTable){
 
 // Compute hash value from the state coordinates TODO
 static __device__ uint32_t computeHash(int32_t* state){
-    
+    uint32_t hash = 0;
+    for(int i=0;i<DIM;i++) hash ^= state[i];
+    return hash;
 }
 
-static __device__ int cmpState(int32_t* state1, int32_t* state2){
-    return memcmp(state1, state2, sizeof(int32_t) * DIM ) == 0;
+static __device__ bool equalState(int32_t* state1, int32_t* state2){
+    for(int i=0; i<DIM; i++){
+        if(state1[i] != state2[i]) return false;
+    }    
+    return true;
 }
 
 // Copy hashtable key
 static __device__ void copyKey(int32_t* src, int32_t* dst){
-    memcpy(dst, src, sizeof(int32_t) * DIM);
+    for(int i=0; i<DIM; i++){
+        dst[i] = src[i];
+    }   
 }
 
 // Copy Cell
 static __device__ void copyCell(Cell* src, Cell* dst){
-    memcpy(dst, src, sizeof(Cell));
+    char *d = (char *)dst;
+    const char *s = (const char *)src;
+    for(int i=0;i<sizeof(Cell);i++){
+        d[i] = s[i];
+    }    
 }
 
 /** Hashtable operations  (device) */
 
-__device__ void insertCell(Cell* cell, , HashTable* hashTable){
-    if(hashTable->usedSize >= hashTable.size){
+__device__ void insertCell(Cell* cell, HashTable* hashTable){
+    if(hashTable->usedSize >= hashTable->size){
         // TODO launch GRID_FULL_ERROR
         }
     
-   uint32_t hash = computeHash(state);   
+   uint32_t hash = computeHash(cell->state);   
    uint32_t capacity = 2 * hashTable->size;
    
-    for(uint32_t counter = 0; counter <capacity; counter++){
-        uint32_t hashIndex = (hash + counter) %= capacity;
-        if(!hashTable->table[hashIndex]->usedIndex) ){
+    for(uint32_t counter = 0; counter < capacity; counter++){
+        uint32_t hashIndex = (hash + counter) % capacity;
+        if(!hashTable->table[hashIndex].usedIndex){
             uint32_t usedIndex = hashTable->usedSize;
-            hashTable->table[hashIndex]->usedIndex) = usedIndex;
-            copyKey(cell->state,  hashTable->table[hashIndex]->key); 
+            hashTable->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell
+            copyKey(cell->state,  hashTable->table[hashIndex].key); 
             hashTable->usedList[usedIndex] = hashTable->freeList[ hashTable->freeSize -1 ];
-            copyCell(cell, hashTable->usedList[usedIndex])
+            Cell* dstCell = hashTable->heap + hashTable->usedList[usedIndex];
+            copyCell(cell, dstCell);
             hashTable->freeSize--;
             hashTable->usedSize++;            
             return;
@@ -76,8 +93,30 @@ __device__ void insertCell(Cell* cell, , HashTable* hashTable){
     // TODO launch ILLEGAL_STATE_ERROR   
 }
 
-__device__ void deleteCell(Cell* cell, , HashTable* hashTable){
-    
+__device__ void deleteCell(int32_t* state, HashTable* hashTable){
+   uint32_t hash = computeHash(state);   
+   uint32_t capacity = 2 * hashTable->size;
+   
+   for(uint32_t counter = 0; counter < capacity; counter++){
+        uint32_t hashIndex = (hash + counter) % capacity;
+        if(equalState(hashTable->table[hashIndex].key, state) ){
+            uint32_t usedIndex = hashTable->table[hashIndex].usedIndex - 1; // 0 is reserved to mark not used cell            
+            
+            // mark the cell in the hash-table as emtpy
+            hashTable->table[hashIndex].usedIndex = 0;
+            
+            // add the index to the free list
+            hashTable->freeList[ hashTable->freeSize ] = usedIndex;
+            hashTable->freeSize++;
+            
+            // remove the index from the used list (compact-up the table)
+            for(int i=usedIndex+1;i < hashTable->usedSize; i++){
+                hashTable->usedList[i-1] = hashTable->usedList[i];
+            }
+            hashTable->usedSize--;  
+            break;                                        
+        }
+    }        
 }
 
 /** Get cell by grid position (hashcode from the table) */
@@ -85,10 +124,10 @@ __device__ Cell* findCell(int32_t* state, HashTable* hashTable){
    uint32_t hash = computeHash(state);   
    uint32_t capacity = 2 * hashTable->size;
    
-   for(uint32_t counter = 0; counter <capacity; counter++){
-        uint32_t hashIndex = (hash + counter) %= capacity;
-        if(equalsState(hashTable->table[hashIndex]->key, state) ){
-            uint32_t usedIndex = hashTable->table[hashIndex]->usedIndex;
+   for(uint32_t counter = 0; counter < capacity; counter++){
+        uint32_t hashIndex = (hash + counter) % capacity;
+        if(equalState(hashTable->table[hashIndex].key, state) ){
+            uint32_t usedIndex = hashTable->table[hashIndex].usedIndex - 1; // 0 is reserved to mark not used cell
             uint32_t heapIndex = hashTable->usedList[usedIndex];
             return hashTable->heap + heapIndex;
             }

@@ -36,4 +36,13 @@ void allocHashTableDevice(HashTable* hashTable, Grid* grid);
 void freeHashTableDevice(HashTable* hashTable);
 
 
+__device__ void insertCell(Cell* cell, HashTable* hashTable);
+
+__device__ void deleteCell(int32_t* state, HashTable* hashTable);
+
+__device__ Cell* findCell(int32_t* state, HashTable* hashTable);
+
+__device__ Cell* getCell(uint32_t index, HashTable* hashTable);
+
+
 #endif
