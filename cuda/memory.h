@@ -3,32 +3,37 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
+#include <stdint.h>
+#include "config.h"
+#include "../gbees/gbees.h"
+
+/** Hash table entry */
+typedef struct {
+    int32_t  key[DIM];
+    uint32_t  usedIndex;    
+    } HashTableEntry;
+
+/** Hash table type */
+typedef struct {
+    uint32_t size;
+    HashTableEntry* table;         // device pointer
+    uint32_t usedSize;
+    uint32_t* usedList;   // device pointer (indexed from [1] as 0 is the null value)
+    uint32_t freeSize;
+    uint32_t* freeList;    // device pointer (indexed from [1] as 0 is the null value)  
+    Cell* heap;     // device pointer (indexed from [1] as 0 is the null value)
+    } HashTable;
+
+
 /** --- Device global memory allocations --- */
 
 /** Alloc hash-table in device global memory */
-void allocHashTableDevice(float** hashTableDevicePtr, Config config);
-
-/** Alloc occuped list in device global memory */
-void allocOccupedListDevice(float** occupedListDevicePtr, Config config);
-
-/** Alloc empty list in device global memory */
-void allocEmptyListDevice(float** emptyListDevicePtr, Config config);
-
-/** Alloc grid cells in device global memory */
-void allocGridDevice(float** gridDevicePtr, Config config);
+void allocHashTableDevice(HashTable* hashTable, Grid* grid);
 
 /** --- Device global memory de-allocations --- */
 
 /** Free hash-table in device global memory */
-void freeHashTableDevice(float* hashTableDevicePtr);
+void freeHashTableDevice(HashTable* hashTable);
 
-/** Free occuped list in device global memory */
-void freeOccupedListDevice(float* occupedListDevicePtr);
-
-/** Free empty list in device global memory */
-void freeEmptyListDevice(float* emptyListDevicePtr);
-
-/** Free grid cells in device global memory */
-void freeGridDevice(float* gridDevicePtr);
 
 #endif

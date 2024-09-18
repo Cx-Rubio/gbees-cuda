@@ -1,6 +1,8 @@
+*.o
 *.i
 *.ii
 *.gpu
 *.ptx
 *.cubin
 *.fatbin
+GBEES

@@ -5,6 +5,7 @@
 #define GBEES_H
 
 typedef struct Grid {
+    int maxCells;
     int dim; 
     double thresh;
     double dt;
@@ -21,12 +22,11 @@ typedef struct Traj {
 
 typedef struct Cell Cell;
 
-struct Cell {
-    uint64_t key;
+struct Cell {    
     double prob;
     double *v;
     double *ctu;
-    int *state;
+    int32_t  *state;
     Cell **i_nodes;
     Cell **k_nodes;
     double dcu;
