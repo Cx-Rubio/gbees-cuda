@@ -3,7 +3,12 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/** Grid dimension */
+#define DIM 3
+
 /** Enable logs (comment out to disable logs) */
 #define ENABLE_LOG
+
+
 
 #endif

@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 static const int EXIT_CODE = -1;
-enum error {MALLOC_ERROR=1, KERNEL_ERROR, GPU_ERROR, IO_ERROR, FORMAT_ERROR};
+enum error {MALLOC_ERROR=1, KERNEL_ERROR, GPU_ERROR, IO_ERROR, FORMAT_ERROR, GRID_FULL_ERROR};
 
 /** Error description */
 static const char* getErrorString(int err){
