@@ -28,7 +28,7 @@ typedef struct {
 /** --- Device global memory allocations --- */
 
 /** Alloc hash-table in device global memory */
-void allocHashTableDevice(HashTable* hashTable, Grid* grid);
+void allocHashTableDevice(HashTable* hashTable);
 
 /** --- Device global memory de-allocations --- */
 
@@ -36,13 +36,13 @@ void allocHashTableDevice(HashTable* hashTable, Grid* grid);
 void freeHashTableDevice(HashTable* hashTable);
 
 
-__device__ void insertCell(Cell* cell, HashTable* hashTable);
+__host__ __device__ void insertCell(Cell* cell, HashTable* hashTable);  
 
-__device__ void deleteCell(int32_t* state, HashTable* hashTable);
+__host__ __device__ void deleteCell(int32_t* state, HashTable* hashTable);
 
-__device__ Cell* findCell(int32_t* state, HashTable* hashTable);
+__host__ __device__ Cell* findCell(int32_t* state, HashTable* hashTable);
 
-__device__ Cell* getCell(uint32_t index, HashTable* hashTable);
+__host__ __device__ Cell* getCell(uint32_t index, HashTable* hashTable);
 
 
 #endif

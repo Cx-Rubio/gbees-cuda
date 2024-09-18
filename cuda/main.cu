@@ -11,6 +11,7 @@
 #include "macro.h"
 #include "device.h"
 #include "kernel.h"
+#include "test/hashmapTest.h"
 
 /** Register ctrl-C handler */
 void registerSignalHandlers(void);
@@ -48,19 +49,36 @@ int main(int argc, char **argv) {
         clock_gettime(CLOCK_REALTIME, &start); // start time measurement
 #endif
 
-    // call the kernel
-    int blocks = 1;
-    int threads = 1;
-    int maxCells = 1024;
-    kernel<<<blocks,threads>>>(maxCells);
+    // allocate hashtable
+    HashTable hashtable;
+    hashtable.size = 8;
+    allocHashTableDevice(&hashtable);
+
+    if(autotest){
+        int blocks = 1;
+        int threads = 1;
+        hashTableTest<<<blocks,threads>>>(hashtable);    
+    } else {
+        // call the kernel
+        int blocks = 1;
+        int threads = 1;
+        int maxCells = 1024;
+        kernel<<<blocks,threads>>>(maxCells);    
+    }
 
     cudaDeviceSynchronize();
+
+    // free device memory
+    freeHashTableDevice(&hashtable);
+
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
         clock_gettime(CLOCK_REALTIME, &end);
         double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
 #endif
+
+    
 
 #ifdef ENABLE_LOG
         // print elapsed time

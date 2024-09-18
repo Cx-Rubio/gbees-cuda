@@ -1,7 +1,7 @@
 // Copyright 2024 by Carlos Rubio, published under BSD 3-Clause License.
 
-#ifndef GBEES_H
-#define GBEES_H
+#ifndef KERNEL_H
+#define KERNEL_H
 
 
 /** Kernel function */

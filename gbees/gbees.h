@@ -26,7 +26,7 @@ struct Cell {
     double prob;
     double *v;
     double *ctu;
-    int32_t  *state;
+    int32_t state[DIM];
     Cell **i_nodes;
     Cell **k_nodes;
     double dcu;

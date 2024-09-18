@@ -12,7 +12,7 @@ CC=gcc
 #CUDAFLAGS = -arch=compute_60 -lineinfo -O3 -maxrregcount 24
 CUDAFLAGS = -arch=compute_60 -O3
 
-SOURCES = $(wildcard cuda/*.cu)
+SOURCES = $(wildcard cuda/*.cu) $(wildcard cuda/test/*.cu) $(wildcard gbees/*.cu)
 OBJS := $(patsubst %.cu,%.o,$(SOURCES))
 
 TARGET = GBEES
@@ -25,7 +25,7 @@ link: ${OBJS}
 	${NVCC} ${CUDAFLAGS} -o ${TARGET} ${OBJS}
 
 %.o: %.cu
-	${NVCC} ${CUDAFLAGS} -c $< -o $@
+	${NVCC} ${CUDAFLAGS} -dc -x cu $< -o $@
 
 clean:
 	rm -f src/*.o 	
