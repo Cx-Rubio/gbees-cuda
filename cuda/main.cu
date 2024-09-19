@@ -11,7 +11,8 @@
 #include "macro.h"
 #include "device.h"
 #include "kernel.h"
-#include "test/hashmapTest.h"
+#include "grid.h"
+#include "test/gridTest.h"
 
 /** Register ctrl-C handler */
 void registerSignalHandlers(void);
@@ -50,14 +51,14 @@ int main(int argc, char **argv) {
 #endif
 
     // allocate hashtable
-    HashTable hashtable;
-    hashtable.size = 8;
-    allocHashTableDevice(&hashtable);
+    Grid grid;
+    grid.size = 8;
+    allocGridDevice(&grid);
 
     if(autotest){
         int blocks = 1;
         int threads = 1;
-        hashTableTest<<<blocks,threads>>>(hashtable);    
+        gridTest<<<blocks,threads>>>(grid);    
     } else {
         // call the kernel
         int blocks = 1;
@@ -69,7 +70,7 @@ int main(int argc, char **argv) {
     cudaDeviceSynchronize();
 
     // free device memory
-    freeHashTableDevice(&hashtable);
+    freeGridDevice(&grid);
 
 
 #ifdef ENABLE_LOG

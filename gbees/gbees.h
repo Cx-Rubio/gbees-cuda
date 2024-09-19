@@ -4,7 +4,7 @@
 #ifndef GBEES_H
 #define GBEES_H
 
-typedef struct Grid {
+typedef struct {
     int maxCells;
     int dim; 
     double thresh;
@@ -13,7 +13,7 @@ typedef struct Grid {
     double *dx;
     double hi_bound;
     double lo_bound;
-} Grid;
+} GridDefinition;
 
 
 typedef struct Traj {
