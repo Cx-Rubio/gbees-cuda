@@ -10,23 +10,32 @@
 
 #include <stdio.h>
 
+/** Error codes */
 static const int EXIT_CODE = -1;
-enum error {MALLOC_ERROR=1, KERNEL_ERROR, GPU_ERROR, IO_ERROR, FORMAT_ERROR, GRID_FULL_ERROR};
+enum error {MALLOC_ERROR=1, KERNEL_ERROR, GPU_ERROR, IO_ERROR, FORMAT_ERROR};
 
-/** Error description */
+/** 
+ *@brief Gets error description from error code
+ * 
+ *@param err error index in the error enumeration
+ */
 static const char* getErrorString(int err){
     switch(err){
         case MALLOC_ERROR: return "malloc error";
         case KERNEL_ERROR: return "kernel error";
         case GPU_ERROR: return "gpu error";
         case IO_ERROR: return "IO error";
-        case FORMAT_ERROR: return "format error";
+        case FORMAT_ERROR: return "format error";        
         default: return "";
     }
 }
 
 /**
- * Handle app error, print the error name, the file and line where occurs, and exit
+ * @brief Handle app error, print the error name, the file and line where occurs, and exit
+ * 
+ * @param err error index in the error enumeration
+ * @param file source file name
+ * @param line source file line
  */
 static void HandleError( int err, const char *file, int line) {
     if (err != 0) {
@@ -37,11 +46,13 @@ static void HandleError( int err, const char *file, int line) {
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
 /**
- * Handle CUDA error, print the error name, the file and line where occurs, and exit
+ * @brief Handle CUDA error, print the error name, the file and line where occurs, and exit
+ * 
+ * @param err error index in the error enumeration
+ * @param file source file name
+ * @param line source file line
  */
-static void HandleErrorCuda( cudaError_t err,
-                         const char *file,
-                         int line ) {
+static void HandleErrorCuda( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         printf( "%s in %s at line %d\n", cudaGetErrorString( err ),
                 file, line );
@@ -51,7 +62,7 @@ static void HandleErrorCuda( cudaError_t err,
 #define HANDLE_CUDA( err ) (HandleErrorCuda( err, __FILE__, __LINE__ ))
 
 /**
- * Handle no GPU detected error
+ * @brief Handle no GPU detected error
  */
 static void HandleNoGpu(){
     printf("Not found any CUDA device or insufficient driver.\n");

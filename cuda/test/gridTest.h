@@ -5,11 +5,11 @@
 
 #include "../grid.h"
 
-/** Kernel function */
+/**
+ * @brief Kernel function to test the grid data structure
+ * 
+ * @param grid the grid object
+ */
 __global__ void gridTest(Grid grid);
-
-__device__ void initializeFreeList(Grid* grid);
-
-__device__ void printGrid(Grid* grid);
 
 #endif

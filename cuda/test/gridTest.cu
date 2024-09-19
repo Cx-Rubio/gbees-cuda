@@ -4,7 +4,22 @@
 #include "../config.h"
 #include <stdio.h>
 
-/** Kernel function */
+/** --- Private functions --- */
+
+/** Initialize the free list from kernel */
+__device__ void initializeFreeList(Grid* grid);
+
+/** Print the grid data structure */
+__device__ void printGrid(Grid* grid);
+
+
+/** --- Public functions --- */
+
+/**
+ * @brief Kernel function to test the grid data structure
+ * 
+ * @param grid the grid object
+ */
 __global__ void gridTest(Grid grid){
     
     printf("$ In kernel test\n");
@@ -46,13 +61,13 @@ __global__ void gridTest(Grid grid){
     // Delete cell
     printf("$ Delete cell3\n");    
     deleteCell(cell3.state, &grid);
-    
+    /*
     printf("$ Insert cell3\n");    
     insertCell(&cell3, &grid);    
     
     printf("$ Insert cell2\n");    
     insertCell(&cell2, &grid);    
-    
+    */
     // Delete cell
     printf("$ Delete cell2\n");    
     deleteCell(cell2.state, &grid);  
@@ -61,7 +76,7 @@ __global__ void gridTest(Grid grid){
         
 }
 
-
+/** Initialize the free list from kernel */
 __device__ void initializeFreeList(Grid* grid){
     for(int i=0;i<grid->size;i++){
         grid->freeList[i] = grid->size - i - 1;
@@ -69,9 +84,10 @@ __device__ void initializeFreeList(Grid* grid){
     grid->freeSize = grid->size;
 }
 
-/** Print grid contents */
+/** Print the grid data structure */
 __device__ void printGrid(Grid* grid){
     printf("Grid:\n");
+    printf("  overflow %d\n", grid->overflow);
     printf("----------------\n");
     printf("Size:%d\n", grid->size);
     

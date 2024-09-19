@@ -23,17 +23,19 @@ void signalHandler(int signal);
 /** Print usage and exit */
 void printUsageAndExit(const char* command);
 
-/** Main function */
+/**
+ * @brief Main function 
+ */
 int main(int argc, char **argv) {  
     // autotest executes one preconfigured computation, useful for testing purposes
     bool autotest = false;
 
     // parameters check
-    if(argc == 3){
-        if(!strcmp(argv[2], "autotest" )) autotest = true;
+    if(argc == 2){
+        if(!strcmp(argv[1], "autotest" )) autotest = true;
         else printUsageAndExit(argv[0]);
     }
-    if(argc != 2 && argc != 3) printUsageAndExit(argv[0]);
+    if(argc != 1 && argc != 2) printUsageAndExit(argv[0]);
     
     // manage ctrl+C
     registerSignalHandlers();
@@ -52,7 +54,7 @@ int main(int argc, char **argv) {
 
     // allocate hashtable
     Grid grid;
-    grid.size = 8;
+    grid.size = 2;
     allocGridDevice(&grid);
 
     if(autotest){

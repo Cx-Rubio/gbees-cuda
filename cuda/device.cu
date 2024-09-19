@@ -9,7 +9,7 @@
 static const double GB = 1024*1024*1024;
 
 /**
- * Selects the GPU with the max number of multiprocessors
+ * @brief Selects the GPU with the max number of multiprocessors
  */
 int selectBestDevice(){    
     int maxMultiprocessors = 0;
@@ -31,7 +31,10 @@ int selectBestDevice(){
 }
 
 /**
- * Gets the maximum number of threads per block for one local CUDA GPU
+ * @brief Gets the maximum number of threads per block of one local CUDA GPU
+ * 
+ * @param device the device id
+ * @return the maximun number of threads per block
  */
 int getMaxThreadsPerBlock(int device){
     cudaDeviceProp prop;
@@ -40,7 +43,7 @@ int getMaxThreadsPerBlock(int device){
 }
 
 /**
- * Prints some info of all detected CUDA GPUs
+ * @brief Prints some info of all detected CUDA GPUs
  */
 void printDevices(void){    
     int count;
@@ -54,7 +57,9 @@ void printDevices(void){
 }
 
 /**
- * Prints some info of one local CUDA GPUs
+ * @brief Prints some info of one local CUDA GPUs
+ * 
+ * @param device the device id
  */
 void printDevice(int device){
     cudaDeviceProp prop;

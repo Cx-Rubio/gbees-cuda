@@ -1,9 +1,9 @@
 // Copyright 2024 by Benjamin Hanson, published under BSD 3-Clause License.
 
-
 #ifndef GBEES_H
 #define GBEES_H
 
+/** Grid definition */
 typedef struct {
     int maxCells;
     int dim; 
@@ -15,13 +15,13 @@ typedef struct {
     double lo_bound;
 } GridDefinition;
 
-
+/** Trajectory information */
 typedef struct Traj {
     double *coef;
 } Traj;
 
+/** Cell definition */
 typedef struct Cell Cell;
-
 struct Cell {    
     double prob;
     double *v;

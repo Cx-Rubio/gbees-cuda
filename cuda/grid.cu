@@ -4,10 +4,10 @@
 #include "macro.h"
 
 /**  Private functions declaration  */
-static __host__ __device__ uint32_t computeHash(int32_t* state);
-static __host__ __device__ bool equalState(int32_t* state1, int32_t* state2);
-static __host__ __device__ void copyKey(int32_t* src, int32_t* dst);
-static __host__ __device__ void copyCell(Cell* src, Cell* dst);
+static __device__ uint32_t computeHash(int32_t* state);
+static __device__ bool equalState(int32_t* state1, int32_t* state2);
+static __device__ void copyKey(int32_t* src, int32_t* dst);
+static __device__ void copyCell(Cell* src, Cell* dst);
 
 /** --- Device global memory allocations  (host) --- */
 
@@ -19,6 +19,7 @@ static __host__ __device__ void copyCell(Cell* src, Cell* dst);
  */
 void allocGridDevice(Grid* grid){    
     uint32_t size = grid->size;
+    grid->overflow = false;
     grid->usedSize = 0;
     grid->freeSize = 0;
     HANDLE_CUDA( cudaMalloc( &grid->table, 2 * size * sizeof(HashTableEntry) ) );
@@ -43,14 +44,14 @@ void freeGridDevice(Grid* grid){
 /**  --- Private functions implementation (device) ---  */
 
 /** Compute hash value from the state coordinates */
-static __host__ __device__ uint32_t computeHash(int32_t* state){
+static __device__ uint32_t computeHash(int32_t* state){
     uint32_t hash = 0;
     for(int i=0;i<DIM;i++) hash ^= state[i];    
     return hash;
 } // TODO improve hash computation if needed
 
 /** Check if the state coordinates are equal */
-static __host__ __device__ bool equalState(int32_t* state1, int32_t* state2){
+static __device__ bool equalState(int32_t* state1, int32_t* state2){
     for(int i=0; i<DIM; i++){
         if(state1[i] != state2[i]) return false;
     }    
@@ -58,14 +59,14 @@ static __host__ __device__ bool equalState(int32_t* state1, int32_t* state2){
 }
 
 /** Copy key */
-static __host__ __device__ void copyKey(int32_t* src, int32_t* dst){
+static __device__ void copyKey(int32_t* src, int32_t* dst){
     for(int i=0; i<DIM; i++){
         dst[i] = src[i];
     }   
 }
 
 /** Copy cell contents */
-static __host__ __device__ void copyCell(Cell* src, Cell* dst){
+static __device__ void copyCell(Cell* src, Cell* dst){
     char *d = (char *)dst;
     const char *s = (const char *)src;
     for(int i=0;i<sizeof(Cell);i++){
@@ -83,11 +84,12 @@ static __host__ __device__ void copyCell(Cell* src, Cell* dst){
  * @param cell new cell pointer
  * @param grid grid pointer
  */
-__host__ __device__ void insertCell(Cell* cell, Grid* grid){
-
-    if(grid->usedSize >= grid->size){ // TODO test this one
-        // TODO launch GRID_FULL_ERROR
-        }
+__device__ void insertCell(Cell* cell, Grid* grid){
+    
+    if(grid->usedSize >= grid->size){
+        grid->overflow = true;
+        return;
+    }
     
    uint32_t hash = computeHash(cell->state);   
    uint32_t capacity = 2 * grid->size;
@@ -114,8 +116,7 @@ __host__ __device__ void insertCell(Cell* cell, Grid* grid){
             copyCell(cell, dstCell);            
             return;
             }
-    }        
-    // TODO launch   ILLEGAL_STATE_ERROR
+    }            
 } 
 
  /**
@@ -125,7 +126,7 @@ __host__ __device__ void insertCell(Cell* cell, Grid* grid){
  * @param state state coordinates of the cell to delete
  * @param grid hash-table pointer
  */
-__host__ __device__ void deleteCell(int32_t* state, Grid* grid){
+__device__ void deleteCell(int32_t* state, Grid* grid){
    uint32_t hash = computeHash(state);   
    uint32_t capacity = 2 * grid->size;
    
@@ -162,7 +163,7 @@ __host__ __device__ void deleteCell(int32_t* state, Grid* grid){
  * @param grid grid pointer
  * @return cell pointer or null if the cell is not found
  */
-__host__ __device__ Cell* findCell(int32_t* state, Grid* grid){
+__device__ Cell* findCell(int32_t* state, Grid* grid){
    uint32_t hash = computeHash(state);   
    uint32_t capacity = 2 * grid->size;
    
@@ -184,7 +185,7 @@ __host__ __device__ Cell* findCell(int32_t* state, Grid* grid){
  * @param grid grid pointer
  * @return cell pointer or null if the cell is not found
  */
-__host__ __device__ Cell* getCell(uint32_t index, Grid* grid){
+__device__ Cell* getCell(uint32_t index, Grid* grid){
     if(index < grid->usedSize){
         uint32_t heapIndex = grid->usedList[index].heapIndex;
         return grid->heap + heapIndex;

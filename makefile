@@ -28,5 +28,7 @@ link: ${OBJS}
 	${NVCC} ${CUDAFLAGS} -dc -x cu $< -o $@
 
 clean:
-	rm -f src/*.o 	
+	rm -f cuda/*.o 	
+	rm -f cuda/test/*.o 	
+	rm -f gbees/*.o 	
 	rm -f ${TARGET}

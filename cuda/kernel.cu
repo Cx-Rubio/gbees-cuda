@@ -2,7 +2,9 @@
 
 #include "kernel.h"
 
-/** Kernel function */
+/** 
+ * @brief Main kernel function 
+ */
 __global__ void kernel(int maxCells){
     
 }

@@ -4,22 +4,27 @@
 #define DEVICE_H
 
 /**
- * Prints some info of all detected CUDA GPUs
+ * @brief Prints some info of all detected CUDA GPUs
  */
 void printDevices(void);
 
 /**
- * Prints some info of one local CUDA GPUs
+ * @brief Prints some info of one local CUDA GPUs
+ * 
+ * @param device the device id
  */
 void printDevice(int device);
 
 /**
- * Selects the GPU with the max number of multiprocessors
+ * @brief Selects the GPU with the max number of multiprocessors
  */
 int selectBestDevice();
 
 /**
- * Gets the maximum number of threads per block of one local CUDA GPU
+ * @brief Gets the maximum number of threads per block of one local CUDA GPU
+ * 
+ * @param device the device id
+ * @return the maximun number of threads per block
  */
 int getMaxThreadsPerBlock(int device);
 

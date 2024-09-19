@@ -21,6 +21,7 @@ typedef struct {
 
 /** Grid data structure */
 typedef struct {
+    bool overflow;
     uint32_t size;
     HashTableEntry* table; 
     uint32_t usedSize;
@@ -55,7 +56,7 @@ void freeGridDevice(Grid* grid);
  * @param cell new cell pointer
  * @param grid grid pointer
  */
-__host__ __device__ void insertCell(Cell* cell, Grid* grid);  
+__device__ void insertCell(Cell* cell, Grid* grid);  
 
  /**
  * @brief Delete a new cell
@@ -64,7 +65,7 @@ __host__ __device__ void insertCell(Cell* cell, Grid* grid);
  * @param state state coordinates of the cell to delete
  * @param grid hash-table pointer
  */
-__host__ __device__ void deleteCell(int32_t* state, Grid* grid);
+__device__ void deleteCell(int32_t* state, Grid* grid);
 
  /**
  * @brief Get cell by state position
@@ -74,7 +75,7 @@ __host__ __device__ void deleteCell(int32_t* state, Grid* grid);
  * @param grid grid pointer
  * @return cell pointer or null if the cell is not found
  */
-__host__ __device__ Cell* findCell(int32_t* state, Grid* grid);
+__device__ Cell* findCell(int32_t* state, Grid* grid);
 
  /**
  * @brief Get cell by index in the used list
@@ -83,7 +84,7 @@ __host__ __device__ Cell* findCell(int32_t* state, Grid* grid);
  * @param grid grid pointer
  * @return cell pointer or null if the cell is not found
  */
-__host__ __device__ Cell* getCell(uint32_t index, Grid* grid);
+__device__ Cell* getCell(uint32_t index, Grid* grid);
 
 
 #endif

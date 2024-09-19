@@ -3,9 +3,9 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-
-/** Kernel function */
+/** 
+ * @brief Main kernel function 
+ */
 __global__ void kernel(int maxCells);
-
 
 #endif
