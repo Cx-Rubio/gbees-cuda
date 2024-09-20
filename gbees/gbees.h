@@ -15,11 +15,6 @@ typedef struct {
     double lo_bound;
 } GridDefinition;
 
-/** Trajectory information */
-typedef struct Traj {
-    double *coef;
-} Traj;
-
 /** Cell definition */
 typedef struct Cell Cell;
 struct Cell {    
