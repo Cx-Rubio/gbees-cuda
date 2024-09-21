@@ -4,7 +4,7 @@
 #define CONFIG_H
 
 /** Grid dimension */
-#define DIM 2
+#define DIM 3
 
 /** Enable logs (comment out to disable logs) */
 #define ENABLE_LOG

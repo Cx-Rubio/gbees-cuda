@@ -8,27 +8,8 @@
 #ifndef MACRO_H
 #define MACRO_H
 
+#include "error.h"
 #include <stdio.h>
-
-/** Error codes */
-static const int EXIT_CODE = -1;
-enum error {MALLOC_ERROR=1, KERNEL_ERROR, GPU_ERROR, IO_ERROR, FORMAT_ERROR};
-
-/** 
- *@brief Gets error description from error code
- * 
- *@param err error index in the error enumeration
- */
-static const char* getErrorString(int err){
-    switch(err){
-        case MALLOC_ERROR: return "malloc error";
-        case KERNEL_ERROR: return "kernel error";
-        case GPU_ERROR: return "gpu error";
-        case IO_ERROR: return "IO error";
-        case FORMAT_ERROR: return "format error";        
-        default: return "";
-    }
-}
 
 /**
  * @brief Handle app error, print the error name, the file and line where occurs, and exit

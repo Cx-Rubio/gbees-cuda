@@ -1,4 +1,5 @@
-
+#include "../cuda/config.h"
+#include "../cuda/macro.h"
 #include "models.h"
 
 /** --- Lorenz3D --- */
@@ -17,21 +18,28 @@ double trajectoryCoefficients[] = {4.0, 1.0, 48.0};
  * @brief Get Lorenz3D default configuration
  */
 Model getLorenz3DConfig(){
+    // sanity check
+    if(DIM != 3){
+        printf( "Error: inconsistent dimension, DIM in config.h should be defined as %d for Lorenz3D model\n", 3);
+        exit( DIM_ERROR );   
+    }
+    
     Model model;
     model.pDir = pDirLorenz3D;      // Saved PDFs path
-    model.mDir = mDirLorenz3D;    // Measurement path
-    model.mFile = mFileLorenz3D;  // Measurement file
+    model.mDir = mDirLorenz3D;      // Measurement path
+    model.mFile = mFileLorenz3D;    // Measurement file
     model.trajectory.coefficients = trajectoryCoefficients; // Trajectory coefficients
-    model.f = &fLorenz3D;                       //  Dynamics model
-    model.z = &zLorenz3D;                   // Measurement model
-    model.numDistRecorded = 5;          // Number of distributions recorded per measurement
-    model.numMeasurements = 2;       // Number of measurements
-    model.deletePeriodSteps = 20;       // Number of steps per deletion procedure
-    model.outputPeriodSteps = 20;      // Number of steps per output to terminal
-    model.performOutput = true;         // Write info to terminal
-    model.performRecord = true;         // Write PDFs to .txt file // REF- Convention over Configuration (CoC)
-    model.performMeasure = true;      // Take discrete measurement updates
-    model.useBounds = false;              // Add inadmissible regions to grid  
+    model.f = &fLorenz3D;           //  Dynamics model
+    model.z = &zLorenz3D;           // Measurement model
+    model.mDim = 1;                 // Measurement dimension
+    model.numDistRecorded = 5;      // Number of distributions recorded per measurement
+    model.numMeasurements = 2;      // Number of measurements
+    model.deletePeriodSteps = 20;   // Number of steps per deletion procedure
+    model.outputPeriodSteps = 20;   // Number of steps per output to terminal
+    model.performOutput = true;     // Write info to terminal
+    model.performRecord = true;     // Write PDFs to .txt file // REF- Convention over Configuration (CoC)
+    model.performMeasure = true;    // Take discrete measurement updates
+    model.useBounds = false;        // Add inadmissible regions to grid  
     return model;
 }
 

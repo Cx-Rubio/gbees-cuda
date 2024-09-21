@@ -15,6 +15,7 @@ typedef struct {
   Trajectory trajectory;        // Trajectory information
   void (*f)(double*, double*, double*, double*);   // Dynamics model function ptr
   void (*z)(double*, double*, double*, double*); // Measurement model function ptr
+  int mDim;       // Measurement model dimension (DIM_h)
   int numDistRecorded;        // Number of distributions recorded per measurement
   int numMeasurements;     // Number of measurements
   int deletePeriodSteps;       // Number of steps per deletion procedure

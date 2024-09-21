@@ -1,0 +1,90 @@
+#ifndef MEASUREMENT_H
+#define MEASUREMENT_H
+
+#include "../cuda/config.h"
+#include "../cuda/macro.h"
+#include "models.h"
+
+/** Measurement structure */
+typedef struct {
+    int dim;                // dimensionality of measurement mean and covariance
+    double mean[DIM];       // measurement mean
+    double cov[DIM][DIM];   // covariance matrix
+    double T;               // period of continuous-time propagation before next measurement update
+} Measurement;
+
+/**
+ * @brief Allocate measurements memory in host
+ * 
+ * @param size number of measurement structs
+ * @return pointer to allocated memory
+ */
+Measurement* allocMeasurementsHost(int size);
+
+/**
+ * @brief Allocate measurements memory in device
+ * 
+ * @param size number of measurement structs
+ * @return pointer to allocated memory
+ */
+Measurement* allocMeasurementsDevice(int size);
+
+/**
+ * @brief Copy measurements from host to device
+ * @param measurements pointer to origin
+ * @param measurementsDevice pointer to destination
+ * @param size number of measurement elements
+ */
+void copyHostToDeviceMeasurements(Measurement *measurements, Measurement *measurementsDevice, int size);
+
+/**
+ * @brief Free measurements memory at host
+ * 
+ * @param ptr measurements array pointer
+ */
+void freeMeasurementsHost(Measurement* ptr);
+
+/**
+ * @brief Free measurements memory at device
+ * 
+ * @param ptr measurements array pointer
+ */
+void freeMeasurementsDevice(Measurement* ptr);
+
+/** 
+ * @brief Read measurements from files
+ * 
+ * @param measurement [output] measurement array
+ * @param model model pointer
+ * @param count number of measurement files to read 
+ */
+void readMeasurements(Measurement* measurements, Model* model, int count);
+
+/** 
+ * @brief Read one measurement from file
+ * By convention the file names should be measurement[index].txt, for example for 
+ * index = 0, the file name should be measurement0.txt
+ * 
+ * @param measurement [output] measurement structure to fill in
+ * @param dim dimensionality of measurement structure
+ * @param dir measurements folder
+ * @param index measurement index
+ */
+void readMeasurement(Measurement *measurement, int dim, const char* dir, int index);
+
+/**
+ * @brief Print measurements info
+ * 
+ * @param measurement measurement array pointer
+ * @param count number of elements
+ */
+void printMeasurements(Measurement *measurements, int count);
+
+/**
+ * @brief Print measurement info
+ * 
+ * @param measurement measurement pointer
+ */
+void printMeasurement(Measurement *measurement);
+
+#endif
