@@ -79,7 +79,7 @@ static void zLorenz3D(double* h, double* x, double* dx, double* coef){
  * @param firstMeasurement the first measurement
  */
 static void configureGridLorenz3D(GridDefinition *grid, Measurement *firstMeasurement){
-    grid->maxCells = 1e4;    
+    grid->maxCells = 1e3;    
     grid->dt = DBL_MAX;
     grid->threshold = 5E-6;    
     grid->hi_bound = DBL_MAX;

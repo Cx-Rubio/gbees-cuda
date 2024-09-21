@@ -118,7 +118,7 @@ static void executeGbees(bool autotest, int measurementCount){
     
     // allocate grid (hashtable, lists, and heap)
     Grid grid;
-    grid.size = 4;//gridDefinition.maxCells; FIXME
+    grid.size = gridDefinition.maxCells;
     allocGridDevice(&grid);
     initializeGridDevice(&grid);
     
