@@ -107,20 +107,18 @@ static void executeGbees(bool autotest, int measurementCount){
     Measurement* measurementsHost = allocMeasurementsHost(measurementCount);
     Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
     
-    // read measurements files
+    // read measurements files and copy to device
     readMeasurements(measurementsHost, &model, measurementCount);
     printMeasurements(measurementsHost, measurementCount);
-    //readMeasurement(&measurement, DIM, model.mDir, model.mFile);
-    //printMeasurement(&measurement);
     copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, measurementCount);
     
-    // set grid with in each dimension
-    
-    // fill GridDefinition (dimension, probability threshold, center, grid width) 
+    // fill grid definition (max cells, probability threshold, center, grid width, ...) 
+    GridDefinition gridDefinition;
+    model.configureGrid(&gridDefinition, &measurementsHost[0]);
     
     // allocate hashtable
     Grid grid;
-    grid.size = 2;
+    grid.size = gridDefinition.maxCells;
     allocGridDevice(&grid);
 
     if(autotest){

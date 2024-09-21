@@ -1,6 +1,7 @@
 #include "measurement.h"
 #include <stdio.h>
 #include "../cuda/error.h"
+#include "models.h"
 
 /**
  * @brief Allocate measurements memory in host

@@ -5,13 +5,17 @@
 #include "../cuda/macro.h"
 #include "models.h"
 
+/** Forward declaration */
+struct Model;
+
 /** Measurement structure */
-typedef struct {
+typedef struct Measurement Measurement;
+struct Measurement{
     int dim;                // dimensionality of measurement mean and covariance
     double mean[DIM];       // measurement mean
     double cov[DIM][DIM];   // covariance matrix
     double T;               // period of continuous-time propagation before next measurement update
-} Measurement;
+};
 
 /**
  * @brief Allocate measurements memory in host

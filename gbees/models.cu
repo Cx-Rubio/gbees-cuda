@@ -1,12 +1,14 @@
 #include "../cuda/config.h"
 #include "../cuda/macro.h"
 #include "models.h"
+#include <float.h>
 
 /** --- Lorenz3D --- */
 
-/** Private declarations */
+/** Private declarations (model callbacks) */
 static void fLorenz3D(double* f, double* x, double* dx, double* coef);
 static void zLorenz3D(double* h, double* x, double* dx, double* coef);
+static void configureGridLorenz3D(GridDefinition *grid, Measurement *firstMeasurement);
 
 /** Default configuration parameters for Lorenz3D */
 char pDirLorenz3D[] = "./results";
@@ -31,6 +33,7 @@ Model getLorenz3DConfig(){
     model.trajectory.coefficients = trajectoryCoefficients; // Trajectory coefficients
     model.f = &fLorenz3D;           //  Dynamics model
     model.z = &zLorenz3D;           // Measurement model
+    model.configureGrid = &configureGridLorenz3D; // Grid configuration callback
     model.mDim = 1;                 // Measurement dimension
     model.numDistRecorded = 5;      // Number of distributions recorded per measurement
     model.numMeasurements = 2;      // Number of measurements
@@ -69,3 +72,22 @@ static void zLorenz3D(double* h, double* x, double* dx, double* coef){
     h[0] = x[2];
 }
 
+/**
+ * @brief Ask to the model to define the grid configuration
+ * 
+ * @param grid [output] the grid definition object to configure
+ * @param firstMeasurement the first measurement
+ */
+static void configureGridLorenz3D(GridDefinition *grid, Measurement *firstMeasurement){
+    grid->maxCells = 1e4;    
+    grid->dt = DBL_MAX;
+    grid->threshold = 5E-6;    
+    grid->hi_bound = DBL_MAX;
+    grid->lo_bound = -DBL_MAX;    
+    
+    // Grid width, default is half of the std. dev. from the initial measurement 
+    for(int i=0; i<DIM; i++){
+        grid->center[i] = firstMeasurement->mean[i];
+        grid->dx[i] = pow(firstMeasurement->cov[i][i],0.5)/2.0;
+    }
+}
