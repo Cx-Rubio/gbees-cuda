@@ -6,9 +6,6 @@
 
 /** --- Private functions --- */
 
-/** Initialize the free list from kernel */
-__device__ void initializeFreeList(Grid* grid);
-
 /** Print the grid data structure */
 __device__ void printGrid(Grid* grid);
 
@@ -22,8 +19,7 @@ __device__ void printGrid(Grid* grid);
  */
 __global__ void gridTest(Grid grid){
     
-    printf("$ In kernel test\n");
-    initializeFreeList(&grid);
+    printf("$ In kernel test\n");    
     printGrid(&grid);
     
     // Insert cells    
@@ -74,14 +70,6 @@ __global__ void gridTest(Grid grid){
     
     printGrid(&grid);    
         
-}
-
-/** Initialize the free list from kernel */
-__device__ void initializeFreeList(Grid* grid){
-    for(int i=0;i<grid->size;i++){
-        grid->freeList[i] = grid->size - i - 1;
-    }
-    grid->freeSize = grid->size;
 }
 
 /** Print the grid data structure */

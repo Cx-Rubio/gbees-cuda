@@ -116,10 +116,14 @@ static void executeGbees(bool autotest, int measurementCount){
     GridDefinition gridDefinition;
     model.configureGrid(&gridDefinition, &measurementsHost[0]);
     
-    // allocate hashtable
+    // allocate grid (hashtable, lists, and heap)
     Grid grid;
-    grid.size = gridDefinition.maxCells;
+    grid.size = 4;//gridDefinition.maxCells; FIXME
     allocGridDevice(&grid);
+    initializeGridDevice(&grid);
+    
+    // initialize hashtable and free list in host and copy to device
+    
 
     if(autotest){
         int blocks = 1;

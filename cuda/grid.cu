@@ -41,6 +41,33 @@ void freeGridDevice(Grid* grid){
      HANDLE_CUDA( cudaFree( grid->heap) ); 
 }
 
+/**
+ * @brief Initialize hashtable and free list in host and copy to device
+ * 
+ * @param grid grid pointer
+ */
+void initializeGridDevice(Grid* grid){
+    uint32_t size = grid->size;
+    
+    // allocate list in host
+    uint32_t* list = (uint32_t*)malloc(size * sizeof(uint32_t));    
+    assertNotNull(list, MALLOC_ERROR, "Error allocating host memory for free list initialization");
+    
+    // fill list in host    
+    for(int i=0;i<size;i++){
+        list[i] = size - i - 1;
+    }
+    
+    // copy list from host to device
+    HANDLE_CUDA( cudaMemcpy( grid->freeList , list, size * sizeof(uint32_t), cudaMemcpyHostToDevice) ); 
+    
+    // set free list size    
+    grid->freeSize = size;
+    
+    // free host memory
+    free(list);
+}
+
 /**  --- Private functions implementation (device) ---  */
 
 /** Compute hash value from the state coordinates */

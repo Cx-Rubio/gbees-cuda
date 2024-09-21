@@ -49,6 +49,13 @@ void allocGridDevice(Grid* grid);
 void freeGridDevice(Grid* grid);
 
 /**
+ * @brief Initialize hashtable and free list in host and copy to device
+ * 
+ * @param grid grid pointer
+ */
+void initializeGridDevice(Grid* grid);
+
+/**
  * @brief Insert a new cell
  * @throws GRID_FULL_ERROR if there are not free cells
  * @throws ILLEGAL_STATE_ERROR if incosistency is detected
