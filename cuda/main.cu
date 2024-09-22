@@ -13,15 +13,20 @@
 #include "kernel.h"
 #include "grid.h"
 #include "test/gridTest.h"
+#include "../gbees/models.h"
+#include "../gbees/measurement.h"
 
 /** Register ctrl-C handler */
-void registerSignalHandlers(void);
+static void registerSignalHandlers(void);
 
 /** Ctrl+C handler */
-void signalHandler(int signal);
+static void signalHandler(int signal);
 
 /** Print usage and exit */
-void printUsageAndExit(const char* command);
+static void printUsageAndExit(const char* command);
+
+/** Execute GBEES algorithm */
+static void executeGbees(bool autotest, int measurementCount);
 
 /**
  * @brief Main function 
@@ -51,29 +56,10 @@ int main(int argc, char **argv) {
         struct timespec start, end;
         clock_gettime(CLOCK_REALTIME, &start); // start time measurement
 #endif
+    int measurementCount = 2; // TODO read parameter measurement count
 
-    // allocate hashtable
-    Grid grid;
-    grid.size = 2;
-    allocGridDevice(&grid);
-
-    if(autotest){
-        int blocks = 1;
-        int threads = 1;
-        gridTest<<<blocks,threads>>>(grid);    
-    } else {
-        // call the kernel
-        int blocks = 1;
-        int threads = 1;
-        int maxCells = 1024;
-        kernel<<<blocks,threads>>>(maxCells);    
-    }
-
-    cudaDeviceSynchronize();
-
-    // free device memory
-    freeGridDevice(&grid);
-
+    // execute GBEES algorithm
+    executeGbees(autotest, measurementCount); 
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
@@ -110,4 +96,53 @@ void signalHandler(int signal){
 void printUsageAndExit(const char* command){
     printf("Usage: %s measuremetsFolder {autotest}\n", command);
     exit(EXIT_SUCCESS);
+}
+
+/** Execute GBEES algorithm */
+static void executeGbees(bool autotest, int measurementCount){
+    // obtain model
+    Model model = getLorenz3DConfig();
+        
+    // allocate measurements memory
+    Measurement* measurementsHost = allocMeasurementsHost(measurementCount);
+    Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
+    
+    // read measurements files and copy to device
+    readMeasurements(measurementsHost, &model, measurementCount);
+    printMeasurements(measurementsHost, measurementCount);
+    copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, measurementCount);
+    
+    // fill grid definition (max cells, probability threshold, center, grid width, ...) 
+    GridDefinition gridDefinition;
+    model.configureGrid(&gridDefinition, &measurementsHost[0]);
+    
+    // allocate grid (hashtable, lists, and heap)
+    Grid grid;
+    grid.size = gridDefinition.maxCells;
+    allocGridDevice(&grid);
+    initializeGridDevice(&grid, &gridDefinition, &measurementsHost[0]);
+    
+    if(autotest){
+        int blocks = 1;
+        int threads = 1;
+        
+        printf("Launch test kernel\n");
+        
+        gridTest<<<blocks,threads>>>(grid);    
+    } else {
+        int threads = THREADS_PER_BLOCK;
+        int blocks = (grid.usedSize+threads-1)/threads;
+        
+        printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
+        initializationKernel<<<blocks,threads>>>(grid, measurementsDevice);
+    }
+
+    cudaDeviceSynchronize();
+
+    // free device memory
+    freeGridDevice(&grid);
+    freeMeasurementsDevice(measurementsDevice);
+    
+    // free host memory
+    freeMeasurementsHost(measurementsHost);
 }

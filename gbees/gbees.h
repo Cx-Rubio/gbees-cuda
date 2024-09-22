@@ -5,20 +5,14 @@
 
 /** Grid definition */
 typedef struct {
-    int maxCells;
-    int dim; 
-    double thresh;
+    int maxCells;        
+    double center[DIM];
+    double dx[DIM];
     double dt;
-    double *center;
-    double *dx;
+    double threshold;    
     double hi_bound;
     double lo_bound;
 } GridDefinition;
-
-/** Trajectory information */
-typedef struct Traj {
-    double *coef;
-} Traj;
 
 /** Cell definition */
 typedef struct Cell Cell;

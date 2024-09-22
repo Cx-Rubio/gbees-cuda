@@ -9,8 +9,8 @@ CC=gcc
 # CUDAFLAGS = -arch=compute_90 # Hopper
 # CUDAFLAGS = -arch=compute_100 # Blackwell
 
-#CUDAFLAGS = -arch=compute_60 -lineinfo -O3 -maxrregcount 24
-CUDAFLAGS = -arch=compute_60 -O3
+CUDAFLAGS = -arch=compute_60 -lineinfo -O3
+#CUDAFLAGS = -arch=compute_60 -O3
 
 SOURCES = $(wildcard cuda/*.cu) $(wildcard cuda/test/*.cu) $(wildcard gbees/*.cu)
 OBJS := $(patsubst %.cu,%.o,$(SOURCES))

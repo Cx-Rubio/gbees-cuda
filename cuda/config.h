@@ -4,7 +4,10 @@
 #define CONFIG_H
 
 /** Grid dimension */
-#define DIM 2
+#define DIM 3
+
+/** Number of threads per block */
+#define THREADS_PER_BLOCK 1024
 
 /** Enable logs (comment out to disable logs) */
 #define ENABLE_LOG
