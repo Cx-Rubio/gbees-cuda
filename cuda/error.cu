@@ -31,11 +31,29 @@ const char* getErrorString(int err){
 void assertNotNull(void *ptr, enum Error errorCode, const char* msg, ...){
     if(ptr == NULL) {
         va_list args;
-        va_start(args, msg);    
+        va_start(args, msg);
         vprintf(msg, args);
         printf("\n");
         va_end(args);
-        exit(errorCode);     
+        exit(errorCode);
+    }
+}
+
+/**
+ * @brief Assert that the value is positive, print error and exit otherwise
+ *
+ * @param value the value to check
+ * @param errorCode the associated error code to the assertion fail
+ * @param msg message to print in case of assertion fail
+ */
+void assertPositiveOrZero(int value, enum Error errorCode, const char* msg, ...){
+    if(value < 0) {
+        va_list args;
+        va_start(args, msg);
+        vprintf(msg, args);
+        printf("\n");
+        va_end(args);
+        exit(errorCode);
     }
 }
 

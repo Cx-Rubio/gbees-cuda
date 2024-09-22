@@ -82,7 +82,7 @@ __device__ void printGrid(Grid* grid){
     printf("---Map----------\n");
     for(int i=0;i<2*grid->size;i++){
         if(grid->table[i].usedIndex == 0) {
-            printf("Empty register\n");
+            printf("  Empty register\n");
         } else {
             printf("  Key: [");
             for(int j=0;j<DIM;j++){

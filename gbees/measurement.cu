@@ -132,8 +132,7 @@ void printMeasurements(Measurement *measurements, int count){
     printf("\n -- Measurements -- \n");
     for(int i=0;i<count;i++){
         printMeasurement(&measurements[i]);
-    }
-    printf("\n");
+    }    
 }
 
 /**
@@ -143,21 +142,21 @@ void printMeasurements(Measurement *measurements, int count){
  */
 void printMeasurement(Measurement *measurement){
     printf("Measurement: dim %d\n", measurement->dim);
-    printf("Mean: {");
+    printf("  Mean: {");
     for(int i=0;i<measurement->dim;i++){
         printf("%f", measurement->mean[i]);
         if(i < measurement->dim-1) printf(", ");
     }  
     printf("}\n");
-    printf("Covariance: {\n");
+    printf("  Covariance: {\n");
     for(int i=0;i<measurement->dim;i++){
         for(int j=0;j<measurement->dim;j++){
-            if(j == 0) printf("  ");
+            if(j == 0) printf("    ");
             printf("%f", measurement->cov[i][j]);
             if(j < measurement->dim-1) printf(", ");
             else printf("\n");        
         }
     }  
-    printf("}\n");
-    printf("T: %f\n", measurement->T);
+    printf("  }\n");
+    printf("  T: %f\n", measurement->T);
 }

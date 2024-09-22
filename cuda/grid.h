@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "config.h"
 #include "../gbees/gbees.h"
+#include "../gbees/measurement.h"
 
 /** Hash table entry */
 typedef struct {
@@ -52,13 +53,13 @@ void freeGridDevice(Grid* grid);
  * @brief Initialize hashtable and free list in host and copy to device
  * 
  * @param grid grid pointer
+ * @param gridDefinition grid definition pointer
+ * @param firstMeasurement first measurement
  */
-void initializeGridDevice(Grid* grid);
+void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measurement* firstMeasurement);
 
 /**
  * @brief Insert a new cell
- * @throws GRID_FULL_ERROR if there are not free cells
- * @throws ILLEGAL_STATE_ERROR if incosistency is detected
  * 
  * @param cell new cell pointer
  * @param grid grid pointer

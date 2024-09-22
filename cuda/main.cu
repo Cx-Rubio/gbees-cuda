@@ -120,7 +120,7 @@ static void executeGbees(bool autotest, int measurementCount){
     Grid grid;
     grid.size = gridDefinition.maxCells;
     allocGridDevice(&grid);
-    initializeGridDevice(&grid);
+    initializeGridDevice(&grid, &gridDefinition, &measurementsHost[0]);
     
     // initialize hashtable and free list in host and copy to device
     
