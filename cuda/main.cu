@@ -122,19 +122,19 @@ static void executeGbees(bool autotest, int measurementCount){
     allocGridDevice(&grid);
     initializeGridDevice(&grid, &gridDefinition, &measurementsHost[0]);
     
-    // initialize hashtable and free list in host and copy to device
-    
-
     if(autotest){
         int blocks = 1;
         int threads = 1;
+        
+        printf("Launch test kernel\n");
+        
         gridTest<<<blocks,threads>>>(grid);    
     } else {
-        // call the kernel
-        int blocks = 1;
-        int threads = 1;
-        int maxCells = 1024;
-        kernel<<<blocks,threads>>>(maxCells);    
+        int threads = THREADS_PER_BLOCK;
+        int blocks = (grid.usedSize+threads-1)/threads;
+        
+        printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
+        initializationKernel<<<blocks,threads>>>(grid, measurementsDevice);
     }
 
     cudaDeviceSynchronize();

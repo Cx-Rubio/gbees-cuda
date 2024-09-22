@@ -3,9 +3,14 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
+#include "grid.h"
+#include "../gbees/measurement.h"
+
 /** 
- * @brief Main kernel function 
+ * @brief Initialization kernel function 
+ * 
+ * @param grid the grid object
  */
-__global__ void kernel(int maxCells);
+__global__ void initializationKernel(Grid grid, Measurement* measurements);
 
 #endif
