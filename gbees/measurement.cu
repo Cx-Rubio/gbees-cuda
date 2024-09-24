@@ -66,6 +66,7 @@ void readMeasurements(Measurement* measurements, Model* model, int count){
     for(int i=0;i<count;i++){
         int dimension = (i == 0)? DIM : model->mDim;
         readMeasurement(&measurements[i], dimension, model->mDir, i);
+        computeCovarianceInverse(&measurements[i], dimension);
     }
 }
 
@@ -120,6 +121,16 @@ void readMeasurement(Measurement *measurement, int dim, const char* dir, int ind
     measurement->T = strtod(line, NULL);
 
     fclose(fd);    
+}
+
+/** 
+ * @brief Compute the inverse of the covariance matrix
+ * 
+ * @param measurement measurement structure pointer to update the covariance inverse matrix
+ * @param dim dimensionality of measurement structure
+ */
+void computeCovarianceInverse(Measurement *measurement, int dim){
+    
 }
 
 /**

@@ -108,7 +108,7 @@ static void executeGbees(bool autotest, int measurementCount){
     Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
     
     // read measurements files and copy to device
-    readMeasurements(measurementsHost, &model, measurementCount);
+    readMeasurements(measurementsHost, &model, measurementCount);    
     printMeasurements(measurementsHost, measurementCount);
     copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, measurementCount);
     
