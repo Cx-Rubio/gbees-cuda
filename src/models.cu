@@ -1,5 +1,7 @@
-#include "../cuda/config.h"
-#include "../cuda/macro.h"
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
+
+#include "config.h"
+#include "macro.h"
 #include "models.h"
 #include <float.h>
 

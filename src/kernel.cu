@@ -1,8 +1,8 @@
-// Copyright 2024 by Carlos Rubio, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #include "kernel.h"
 #include <stdio.h>
-#include "../gbees/maths.h"
+#include "maths.h"
 
 /** Calculate gaussian probability at state x given mean and covariance */
 static __device__ double gaussProbability(int32_t* x, Measurement* measurement);

@@ -1,4 +1,4 @@
-// Copyright 2024 by Benjamin Hanson, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #ifndef GBEES_H
 #define GBEES_H

@@ -1,3 +1,4 @@
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #ifndef MODELS_H
 #define MODELS_H

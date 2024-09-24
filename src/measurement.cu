@@ -1,6 +1,8 @@
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
+
 #include "measurement.h"
 #include <stdio.h>
-#include "../cuda/error.h"
+#include "error.h"
 #include "models.h"
 
 /**

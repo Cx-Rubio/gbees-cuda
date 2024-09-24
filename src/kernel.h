@@ -1,10 +1,10 @@
-// Copyright 2024 by Carlos Rubio, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #ifndef KERNEL_H
 #define KERNEL_H
 
 #include "grid.h"
-#include "../gbees/measurement.h"
+#include "measurement.h"
 
 /** 
  * @brief Initialization kernel function 

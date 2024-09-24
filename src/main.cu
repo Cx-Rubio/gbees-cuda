@@ -1,4 +1,4 @@
-// Copyright 2024 Carlos Rubio, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #include <unistd.h>  
 #include <stdio.h>
@@ -13,8 +13,8 @@
 #include "kernel.h"
 #include "grid.h"
 #include "test/gridTest.h"
-#include "../gbees/models.h"
-#include "../gbees/measurement.h"
+#include "models.h"
+#include "measurement.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);

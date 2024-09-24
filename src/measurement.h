@@ -1,8 +1,10 @@
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
+
 #ifndef MEASUREMENT_H
 #define MEASUREMENT_H
 
-#include "../cuda/config.h"
-#include "../cuda/macro.h"
+#include "config.h"
+#include "macro.h"
 #include "models.h"
 
 /** Forward declaration */
