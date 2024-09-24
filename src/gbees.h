@@ -18,8 +18,8 @@ typedef struct {
 typedef struct Cell Cell;
 struct Cell {    
     double prob;
-    double *v;
-    double *ctu;
+    double v[DIM];
+    double ctu[DIM];
     int32_t state[DIM];
     Cell **i_nodes;
     Cell **k_nodes;

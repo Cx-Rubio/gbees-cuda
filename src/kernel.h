@@ -9,9 +9,11 @@
 /** 
  * @brief Initialization kernel function 
  * 
+ * @param gridDefinition the grid definition
  * @param grid the grid object
+ * @param model the model
  * @param measurements the list of measurements
  */
-__global__ void initializationKernel(Grid grid, Measurement* measurements);
+__global__ void initializationKernel(GridDefinition gridDefinition, Grid grid, Model model, Measurement* measurements);
 
 #endif

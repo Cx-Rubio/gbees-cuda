@@ -101,7 +101,8 @@ void printUsageAndExit(const char* command){
 /** Execute GBEES algorithm */
 static void executeGbees(bool autotest, int measurementCount){
     // obtain model
-    Model model = getLorenz3DConfig();
+    Model model;
+    configureLorenz3D(&model);
         
     // allocate measurements memory
     Measurement* measurementsHost = allocMeasurementsHost(measurementCount);
@@ -134,7 +135,7 @@ static void executeGbees(bool autotest, int measurementCount){
         int blocks = (grid.usedSize+threads-1)/threads;
         
         printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
-        initializationKernel<<<blocks,threads>>>(grid, measurementsDevice);
+        initializationKernel<<<blocks,threads>>>(gridDefinition, grid, model, measurementsDevice);
     }
     
     // check kernel error
@@ -148,7 +149,10 @@ static void executeGbees(bool autotest, int measurementCount){
     // free device memory
     freeGridDevice(&grid);
     freeMeasurementsDevice(measurementsDevice);
+    freeModel(&model);
     
-    // free host memory
+    // free host memory    
     freeMeasurementsHost(measurementsHost);
+    
+    
 }
