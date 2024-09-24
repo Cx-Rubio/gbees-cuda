@@ -7,7 +7,7 @@
 #define DIM 3
 
 /** Number of threads per block */
-#define THREADS_PER_BLOCK 1024
+#define THREADS_PER_BLOCK 512
 
 /** Enable logs (comment out to disable logs) */
 #define ENABLE_LOG

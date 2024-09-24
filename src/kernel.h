@@ -10,6 +10,7 @@
  * @brief Initialization kernel function 
  * 
  * @param grid the grid object
+ * @param measurements the list of measurements
  */
 __global__ void initializationKernel(Grid grid, Measurement* measurements);
 

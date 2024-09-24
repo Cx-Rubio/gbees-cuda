@@ -1,5 +1,5 @@
 // Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
-
+#include "config.h"
 #include "maths.h"
 #include "error.h"
 #include <stdio.h>
@@ -54,12 +54,11 @@ __host__ void invertMatrix(double* matrix, double* inverse, int size) {
  * @param size the size of the matrix
  */
 __device__ void multiplyMatrixVector(double* matrix, double* vector, double* result, int size) {
-    // TODO check as alternative using tensor cores
-    int i, j;
-    for (i = 0; i < size; i++) {
+    // TODO check as alternative using tensor cores    
+    for (int i = 0; i < size; i++) {
         result[i] = 0;
-        for (j = 0; j < size; j++) {            
-            result[i] += matrix[i * size + j] * vector[j];
+        for (int j = 0; j < size; j++) {            
+            result[i] += matrix[i * size + j] * vector[j];                        
         }
     }
 }
@@ -71,10 +70,9 @@ __device__ void multiplyMatrixVector(double* matrix, double* vector, double* res
  * @param size vector size
  * @return the dot product
  */
-__device__ double computeDotProduct(double* vec1, double* vec2, int size) {
-    int i;
+__device__ double computeDotProduct(double* vec1, double* vec2, int size) {    
     double result = 0;
-    for (i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++) {
         result += vec1[i] * vec2[i];
     }
     return result;
