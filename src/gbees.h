@@ -3,6 +3,8 @@
 #ifndef GBEES_H
 #define GBEES_H
 
+#include <stdint.h>
+
 /** Grid definition */
 typedef struct {
     int maxCells;        
@@ -21,8 +23,8 @@ struct Cell {
     double v[DIM];
     double ctu[DIM];
     int32_t state[DIM];
-    Cell **i_nodes;
-    Cell **k_nodes;
+    uint32_t iNodes[DIM]; // used list indexes
+    uint32_t kNodes[DIM]; // used list indexes
     double dcu;
     double cfl_dt;
     int new_f;

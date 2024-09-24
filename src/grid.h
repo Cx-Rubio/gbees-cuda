@@ -24,6 +24,7 @@ typedef struct {
 typedef struct {
     bool overflow;
     uint32_t size;
+    uint32_t initialExtent[DIM];
     HashTableEntry* table; 
     uint32_t usedSize;
     UsedListEntry* usedList; 

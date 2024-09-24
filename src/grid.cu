@@ -5,7 +5,7 @@
 #include <string.h>
 
 /**  Private functions declaration (host) */
-static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t* initialExtents, int32_t* key, uint32_t gridSize, uint32_t* usedSizePtr, int level);
+static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t* initialExtent, int32_t* key, uint32_t gridSize, uint32_t* usedSizePtr, int level);
 static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t gridSize, uint32_t* usedSizePtr);
 
 /**  Private functions declaration (device) */
@@ -53,12 +53,11 @@ void freeGridDevice(Grid* grid){
  * @param firstMeasurement first measurement
  */
 void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measurement* firstMeasurement){
-    uint32_t size = grid->size; // size of all the grid space (number of cells)
-    uint32_t initialExtents[DIM]; // initial extent in each dimension
+    uint32_t size = grid->size; // size of all the grid space (number of cells)    
     
     // compute initial grid size in each dimension
     for(int i=0;i<DIM;i++){
-        initialExtents[i] = (int) round(3.0 * pow(firstMeasurement->cov[i][i], 0.5) / gridDefinition->dx[i]);
+        grid->initialExtent[i] = (int) round(3.0 * pow(firstMeasurement->cov[i][i], 0.5) / gridDefinition->dx[i]);
     }
     
     // allocate free list in host
@@ -66,9 +65,9 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
     assertNotNull(freeListHost, MALLOC_ERROR, "Error allocating host memory for free list initialization");
     
     // compute the number of used and free cells
-    int usedCells = initialExtents[0] * 2 + 1; // used cells for the first dimension
+    int usedCells = grid->initialExtent[0] * 2 + 1; // used cells for the first dimension
     for(int i=1;i<DIM;i++){ // used cells for the other dimensions
-        usedCells *= (initialExtents[i] * 2 + 1);
+        usedCells *= (grid->initialExtent[i] * 2 + 1);
     }
     int freeCells = size - usedCells;
     
@@ -107,7 +106,7 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
     // recursive initialization of the hashtable and used list 
     int32_t key[DIM];
     uint32_t usedSize = 0;
-    initializeHashtable(hashtableHost, usedListHost, initialExtents, key, size, &usedSize, 0);
+    initializeHashtable(hashtableHost, usedListHost, grid->initialExtent, key, size, &usedSize, 0);
      
     // set used list size    
     grid->usedSize = usedSize;  
@@ -126,16 +125,16 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
 /**  --- Private functions implementation (host) ---  */
 
 /** Recursive initialization of the hashtable and used list  */
-static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t* initialExtents, int32_t* key, uint32_t gridSize, uint32_t* usedSizePtr, int level){
+static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t* initialExtent, int32_t* key, uint32_t gridSize, uint32_t* usedSizePtr, int level){
     if(level == DIM){
         insertKey(key, hashtable, usedList, gridSize, usedSizePtr);
         return;
     }
     
-    int span = (int)initialExtents[level];
+    int span = (int)initialExtent[level];
     for(int i=-span; i<=span;i++){            
         key[level] = i;
-        initializeHashtable(hashtable, usedList, initialExtents, key, gridSize, usedSizePtr, level+1);
+        initializeHashtable(hashtable, usedList, initialExtent, key, gridSize, usedSizePtr, level+1);
     }
 }
 
