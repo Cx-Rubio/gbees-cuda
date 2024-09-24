@@ -3,6 +3,8 @@
 #ifndef GBEES_H
 #define GBEES_H
 
+#include <stdint.h>
+
 /** Grid definition */
 typedef struct {
     int maxCells;        
