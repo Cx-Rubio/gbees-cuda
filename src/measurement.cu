@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "error.h"
 #include "models.h"
+#include "maths.h"
 
 /**
  * @brief Allocate measurements memory in host
@@ -64,11 +65,11 @@ void freeMeasurementsDevice(Measurement* ptr){
  * @param model model pointer
  * @param count number of measurement files to read 
  */
-void readMeasurements(Measurement* measurements, Model* model, int count){
+void readMeasurements(Measurement* measurements, Model* model, int count){    
     for(int i=0;i<count;i++){
         int dimension = (i == 0)? DIM : model->mDim;
         readMeasurement(&measurements[i], dimension, model->mDir, i);
-        computeCovarianceInverse(&measurements[i], dimension);
+        computeCovarianceInverse(&measurements[i], dimension);            
     }
 }
 
@@ -132,7 +133,7 @@ void readMeasurement(Measurement *measurement, int dim, const char* dir, int ind
  * @param dim dimensionality of measurement structure
  */
 void computeCovarianceInverse(Measurement *measurement, int dim){
-    
+    invertMatrix( (double*)measurement->cov, (double*)measurement->covInv, dim);
 }
 
 /**

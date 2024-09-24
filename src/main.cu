@@ -137,7 +137,12 @@ static void executeGbees(bool autotest, int measurementCount){
         initializationKernel<<<blocks,threads>>>(grid, measurementsDevice);
     }
 
-    cudaDeviceSynchronize();
+    cudaError_t cudaerr = cudaDeviceSynchronize();
+    if (cudaerr != cudaSuccess){
+        printf("kernel launch failed with error \"%s\".\n",
+               cudaGetErrorString(cudaerr));
+    
+    }
 
     // free device memory
     freeGridDevice(&grid);

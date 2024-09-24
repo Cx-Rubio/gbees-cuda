@@ -5,13 +5,32 @@
 
 #include "config.h"
 
-/** Invert a matrix of dimension DIM */ // FIXME change to host
-__device__ void invertMatrix(double matrix[DIM][DIM], double inverse[DIM][DIM], int size);
+/** 
+ * @brief Invert a matrix
+ * 
+ * @param matrix the matrix to invert
+ * @param inverse [output] the inverse of matrix to fill in
+ * @param size of the matrices
+ */
+__host__  void invertMatrix(double* matrix, double* inverse, int size);
 
-/** Multiply a matrix by a vector */
-__device__ void multiplyMatrixVector(double matrix[DIM][DIM], double* vector, double* result, int size);
+/**
+ * @brief Multiply a square matrix by a vector
+ * 
+ * @param matrix the matrix
+ * @param vector the vector
+ * @param result [output] the output vector
+ * @param size the size of the matrix
+ */
+__device__ void multiplyMatrixVector(double* matrix, double* vector, double* result, int size);
 
-/** Compute dot product */
+/**
+ * @brief Compute dot product
+ * @param vec1 first vector
+ * @param vec2 second vector
+ * @param size vector size
+ * @return the dot product
+ */
 __device__ double computeDotProduct(double* vec1, double* vec2, int size);
 
 #endif

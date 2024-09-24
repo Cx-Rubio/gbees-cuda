@@ -23,6 +23,8 @@ __global__ void initializationKernel(Grid grid, Measurement* measurements){
     // check used list size
     if(usedIndex >= grid.usedSize) return;
     
+    if(usedIndex > 0 ) return; // FIXME remove this line
+    
     // used list entry
     UsedListEntry* usedListEntry = grid.usedList + usedIndex;
     
@@ -38,22 +40,20 @@ __global__ void initializationKernel(Grid grid, Measurement* measurements){
     grid.heap[heapIndex].prob = prob; 
 
     //if(key[0] == 1 && key[1] == 0 && key[2] == 0) printf("Probability %f\n", prob); // TODO remove
-    if(usedIndex == 0) printf("Probability of %d,%d,%d : %f\n", key[0], key[1], key[2], prob); // TODO remove
-    
+    if(usedIndex == 0) printf("Probability of %d,%d,%d : %f\n", key[0], key[1], key[2], prob); // TODO remove    
 }
 
 /** Calculate gaussian probability at state x given mean and covariance */
-static __device__ double gaussProbability(int32_t* x, Measurement* measurements){
-    double mInv[DIM][DIM];
+static __device__ double gaussProbability(int32_t* x, Measurement* measurements){    
     double mInvX[DIM];
     double diff[DIM];
     
     for(int i=0;i<DIM;i++){
         diff[i] = x[i] - measurements[0].mean[i];
-    }
-    invertMatrix(measurements[0].cov, mInv, DIM);
-    multiplyMatrixVector(mInv, diff, mInvX, DIM);
+    }  
+    multiplyMatrixVector( (double*)measurements[0].covInv, diff, mInvX, DIM);
     double dotProduct = computeDotProduct(diff, mInvX, DIM);
     return exp(-0.5 * dotProduct);
+    
 }
 
