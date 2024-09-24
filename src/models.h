@@ -1,3 +1,4 @@
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #ifndef MODELS_H
 #define MODELS_H
@@ -5,23 +6,23 @@
 #include "gbees.h"
 #include "measurement.h"
 
-/** Trajectory information */
-typedef struct  {
-    double *coefficients;
-} Trajectory;
-
 /** Forward declaration*/
 struct Measurement;
+
+
+/** Model device callbacks */
+typedef void (*modelCallback)(double*, double*, double*);
+typedef struct {
+  modelCallback f; // Dynamics model function ptr
+  modelCallback z; // Measurement model function ptr
+}  Callbacks;
 
 /** Model configuration */
 typedef struct Model Model;
 struct Model {
   char* pDir; // Saved PDFs path
   char* mDir; // Measurement path
-  char* mFile; // Measurement file
-  Trajectory trajectory;        // Trajectory information
-  void (*f)(double*, double*, double*, double*);   // Dynamics model function ptr
-  void (*z)(double*, double*, double*, double*); // Measurement model function ptr
+  char* mFile; // Measurement file    
   void (*configureGrid)(GridDefinition*, Measurement*); // Ask to the model to define the grid configuration
   int mDim;       // Measurement model dimension (DIM_h)
   int numDistRecorded;        // Number of distributions recorded per measurement
@@ -32,12 +33,17 @@ struct Model {
   bool performRecord;         // Write PDFs to .txt file // REF- Convention over Configuration (CoC)
   bool performMeasure;      // Take discrete measurement updates
   bool useBounds;               // Add inadmissible regions to grid  
+  Callbacks* callbacks;
 };
 
 /** 
  * @brief Get Lorenz3D configuration
  */
-Model getLorenz3DConfig(void);
+void configureLorenz3D(Model* model);
 
+/**
+ * @brief Free model memory
+ */
+void freeModel(Model* model);
 
 #endif

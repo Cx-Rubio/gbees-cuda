@@ -1,8 +1,10 @@
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
+
 #ifndef MEASUREMENT_H
 #define MEASUREMENT_H
 
-#include "../cuda/config.h"
-#include "../cuda/macro.h"
+#include "config.h"
+#include "macro.h"
 #include "models.h"
 
 /** Forward declaration */
@@ -11,10 +13,11 @@ struct Model;
 /** Measurement structure */
 typedef struct Measurement Measurement;
 struct Measurement{
-    int dim;                // dimensionality of measurement mean and covariance
-    double mean[DIM];       // measurement mean
-    double cov[DIM][DIM];   // covariance matrix
-    double T;               // period of continuous-time propagation before next measurement update
+    int dim;                 // dimensionality of measurement mean and covariance
+    double mean[DIM];        // measurement mean
+    double cov[DIM][DIM];    // covariance matrix
+    double covInv[DIM][DIM]; // covariance inverse matrix
+    double T;                // period of continuous-time propagation before next measurement update
 };
 
 /**
@@ -75,6 +78,14 @@ void readMeasurements(Measurement* measurements, Model* model, int count);
  * @param index measurement index
  */
 void readMeasurement(Measurement *measurement, int dim, const char* dir, int index);
+
+/** 
+ * @brief Compute the inverse of the covariance matrix
+ * 
+ * @param measurement measurement structure pointer to update the covariance inverse matrix
+ * @param dim dimensionality of measurement structure
+ */
+void computeCovarianceInverse(Measurement *measurement, int dim);
 
 /**
  * @brief Print measurements info

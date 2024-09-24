@@ -1,4 +1,4 @@
-// Copyright 2024 by Carlos Rubio, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #include "error.h"
 #include <stdio.h>
@@ -17,6 +17,8 @@ const char* getErrorString(int err){
         case IO_ERROR: return "IO error";
         case FORMAT_ERROR: return "format error";        
         case DIM_ERROR: return "dimension error";
+        case GRID_ERROR: return "grid error";
+        case MATH_ERROR: return "math error";
         default: return "";
     }
 }
@@ -30,6 +32,24 @@ const char* getErrorString(int err){
  */
 void assertNotNull(void *ptr, enum Error errorCode, const char* msg, ...){
     if(ptr == NULL) {
+        va_list args;
+        va_start(args, msg);
+        vprintf(msg, args);
+        printf("\n");
+        va_end(args);
+        exit(errorCode);
+    }
+}
+
+/**
+ * @brief Assert that value is not zero, print error and exit otherwise
+ *
+ * @param value the value to check
+ * @param errorCode the associated error code to the assertion fail
+ * @param msg message to print in case of assertion fail
+ */
+void assertNotZero(int value, enum Error errorCode, const char* msg, ...){
+    if(value == 0) {
         va_list args;
         va_start(args, msg);
         vprintf(msg, args);

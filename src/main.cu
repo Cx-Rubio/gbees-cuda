@@ -1,4 +1,4 @@
-// Copyright 2024 Carlos Rubio, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #include <unistd.h>  
 #include <stdio.h>
@@ -13,8 +13,8 @@
 #include "kernel.h"
 #include "grid.h"
 #include "test/gridTest.h"
-#include "../gbees/models.h"
-#include "../gbees/measurement.h"
+#include "models.h"
+#include "measurement.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -101,14 +101,15 @@ void printUsageAndExit(const char* command){
 /** Execute GBEES algorithm */
 static void executeGbees(bool autotest, int measurementCount){
     // obtain model
-    Model model = getLorenz3DConfig();
+    Model model;
+    configureLorenz3D(&model);
         
     // allocate measurements memory
     Measurement* measurementsHost = allocMeasurementsHost(measurementCount);
     Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
     
     // read measurements files and copy to device
-    readMeasurements(measurementsHost, &model, measurementCount);
+    readMeasurements(measurementsHost, &model, measurementCount);    
     printMeasurements(measurementsHost, measurementCount);
     copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, measurementCount);
     
@@ -134,15 +135,24 @@ static void executeGbees(bool autotest, int measurementCount){
         int blocks = (grid.usedSize+threads-1)/threads;
         
         printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
-        initializationKernel<<<blocks,threads>>>(grid, measurementsDevice);
+        initializationKernel<<<blocks,threads>>>(gridDefinition, grid, model, measurementsDevice);
     }
+    
+    // check kernel error
+    cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            printf("Kernel error: %s\n", cudaGetErrorString(err));
+    }   
 
-    cudaDeviceSynchronize();
+    cudaDeviceSynchronize();    
 
     // free device memory
     freeGridDevice(&grid);
     freeMeasurementsDevice(measurementsDevice);
+    freeModel(&model);
     
-    // free host memory
+    // free host memory    
     freeMeasurementsHost(measurementsHost);
+    
+    
 }

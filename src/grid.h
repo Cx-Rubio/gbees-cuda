@@ -1,12 +1,12 @@
-// Copyright 2024 by Carlos Rubio, published under BSD 3-Clause License.
+// Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #ifndef MEMORY_H
 #define MEMORY_H
 
 #include <stdint.h>
 #include "config.h"
-#include "../gbees/gbees.h"
-#include "../gbees/measurement.h"
+#include "gbees.h"
+#include "measurement.h"
 
 /** Hash table entry */
 typedef struct {
