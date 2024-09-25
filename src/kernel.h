@@ -6,6 +6,13 @@
 #include "grid.h"
 #include "measurement.h"
 
+/** Global working memory */
+typedef struct {
+    double* probAccumulator;    
+    Measurement* measurements;
+} Global;
+
+
 /** 
  * @brief Initialization kernel function 
  * 
@@ -14,6 +21,6 @@
  * @param model the model
  * @param measurements the list of measurements
  */
-__global__ void initializationKernel(GridDefinition gridDefinition, Grid grid, Model model, Measurement* measurements);
+__global__ void initializationKernel(GridDefinition gridDefinition, Grid grid, Model model, Global global);
 
 #endif

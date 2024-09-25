@@ -123,6 +123,10 @@ static void executeGbees(bool autotest, int measurementCount){
     allocGridDevice(&grid);
     initializeGridDevice(&grid, &gridDefinition, &measurementsHost[0]);
     
+    // global memory for kernel
+    Global global; // global memory
+    global.measurements = measurementsDevice;
+    
     if(autotest){
         int blocks = 1;
         int threads = 1;
@@ -134,8 +138,12 @@ static void executeGbees(bool autotest, int measurementCount){
         int threads = THREADS_PER_BLOCK;
         int blocks = (grid.usedSize+threads-1)/threads;
         
+        HANDLE_CUDA(cudaMalloc(&global.probAccumulator, blocks * sizeof(double)));
+        
         printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
-        initializationKernel<<<blocks,threads>>>(gridDefinition, grid, model, measurementsDevice);
+        initializationKernel<<<blocks,threads>>>(gridDefinition, grid, model, global);
+        
+        HANDLE_CUDA(cudaFree(global.probAccumulator)); 
     }
     
     // check kernel error
@@ -149,7 +157,7 @@ static void executeGbees(bool autotest, int measurementCount){
     // free device memory
     freeGridDevice(&grid);
     freeMeasurementsDevice(measurementsDevice);
-    freeModel(&model);
+    freeModel(&model);    
     
     // free host memory    
     freeMeasurementsHost(measurementsHost);
