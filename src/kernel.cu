@@ -49,6 +49,31 @@ __global__ void initializationKernel(GridDefinition gridDefinition, Grid grid, M
 
     //if(key[0] == -3 && key[1] == -2 && key[2] == 5) printf("Probability %e\n", prob);
     //if(usedIndex == 100) printf("Probability of %d,%d,%d : %f\n", key[0], key[1], key[2], prob);
+    
+    /*if(key[0] == 6 && key[1] == 6 && key[2] == 0){
+    //if(usedIndex == 0){    
+        printf("key %d, %d, %d\n",cell->state[0],cell->state[1],cell->state[2]);
+        int dim = 0;
+        uint32_t iNode = cell->iNodes[dim];
+        uint32_t kNode = cell->kNodes[dim];
+        
+        if(iNode){
+            int heapIndexI = (grid.usedList + (iNode-1))->heapIndex;
+            Cell* cellI = &grid.heap[heapIndexI];
+            printf("I node %d, %d, %d\n", cellI->state[0], cellI->state[1], cellI->state[2]);
+        } else {
+            printf("Mo iNode\n");
+        }
+        
+        if(kNode){            
+            int heapIndexK = (grid.usedList + (kNode-1))->heapIndex;
+            Cell* cellK = &grid.heap[heapIndexK];
+            printf("K node %d, %d, %d\n", cellK->state[0], cellK->state[1], cellK->state[2]);   
+        } else {
+            printf("Mo kNode\n");
+        }            
+    }*/
+    
 }
 
 /** Calculate gaussian probability at state x given mean and covariance */
@@ -92,22 +117,27 @@ static __device__ void initializeAdv(GridDefinition* gridDefinition, Model* mode
  * Initialize ik nodes 
  * This function depends on an specific order to fill the usedList ( filled in function initializeHashtable() ).
  */
-static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIndex){
+static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIndex){        
     uint32_t offset = 1;
-    for(int i=DIM-1;;i--){
-        // if is not the first cell in the dimension i
-        if(cell->state[i] > -grid->initialExtent[i]){
+    for(int i=DIM-1;;i--){        
+        // if is not the first cell in the dimension i        
+        if(cell->state[i] > -(int)grid->initialExtent[i]){
             uint32_t iIndex = usedIndex - offset;
-            cell->iNodes[i] = iIndex;
+            cell->iNodes[i] = iIndex + 1; // reserve 0 for no reference            
+        } else {            
+            cell->iNodes[i] = 0;
         }
         
-        // if is not the last cell in the dimension i
-        if(cell->state[i] < grid->initialExtent[i]){
+        // if is not the last cell in the dimension i        
+        if(cell->state[i] < (int)grid->initialExtent[i]){
             uint32_t kIndex = usedIndex + offset;        
-            cell->kNodes[i] = kIndex;
-        }  
-        if(i<0) break;
-        offset *=DIM;
+            cell->kNodes[i] = kIndex + 1; // reserve 0 for no reference            
+        }  else {            
+            cell->kNodes[i] = 0;
+        }
+        
+        if(i<=0) break;
+        offset *= grid->initialExtent[i] * 2 + 1;
     }    
     cell->ik_f = 1;
 }
