@@ -11,10 +11,10 @@ struct Measurement;
 
 
 /** Model device callbacks */
-typedef void (*modelCallback)(double*, double*, double*);
 typedef struct {
-  modelCallback f; // Dynamics model function ptr
-  modelCallback z; // Measurement model function ptr
+  void (*f)(double*, double*, double*); // Dynamics model function ptr
+  void (*z)(double*, double*, double*); // Measurement model function ptr
+  double (*j)(double*); // Boundary function (optional)  
 }  Callbacks;
 
 /** Model configuration */

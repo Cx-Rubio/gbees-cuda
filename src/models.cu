@@ -39,7 +39,7 @@ void configureLorenz3D(Model* model){
     model->performOutput = true;     // Write info to terminal
     model->performRecord = true;     // Write PDFs to .txt file // REF- Convention over Configuration (CoC)
     model->performMeasure = true;    // Take discrete measurement updates
-    model->useBounds = false;        // Add inadmissible regions to grid      
+    model->useBounds = false;        // Add inadmissible regions to grid
     model->configureGrid = &configureGridLorenz3D; // Grid configuration callback
     
     HANDLE_CUDA(cudaMalloc(&model->callbacks, sizeof(Callbacks)));
@@ -55,7 +55,8 @@ void freeModel(Model* model){
 
 __global__ static void initializeCallbacks(Callbacks* callbacks){
     callbacks->f = fLorenz3D;
-    callbacks->z = zLorenz3D;    
+    callbacks->z = zLorenz3D;  
+    callbacks->j = NULL;
 }
 
 /**

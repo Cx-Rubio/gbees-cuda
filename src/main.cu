@@ -144,7 +144,7 @@ static void executeGbees(bool autotest, int measurementCount, int device){
         // check if the block count can fit in the GPU
         checkCooperativeKernelSize(blocks, threads, initializationKernel, device);
         
-        HANDLE_CUDA(cudaMalloc(&global.probAccumulator, blocks * sizeof(double)));
+        HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
         
 #ifdef ENABLE_LOG        
         printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
@@ -155,7 +155,7 @@ static void executeGbees(bool autotest, int measurementCount, int device){
         dim3 dimGrid(blocks, 1, 1);
         cudaLaunchCooperativeKernel((void*)initializationKernel, dimGrid, dimBlock, kernelArgs);
  
-        HANDLE_CUDA(cudaFree(global.probAccumulator)); 
+        HANDLE_CUDA(cudaFree(global.reductionArray)); 
     }
     
     // check kernel error

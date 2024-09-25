@@ -8,7 +8,7 @@
 
 /** Global working memory */
 typedef struct {
-    double* probAccumulator;    
+    double* reductionArray; // global array for reduction processes
     Measurement* measurements;
 } Global;
 

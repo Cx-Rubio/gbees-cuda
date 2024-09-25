@@ -23,6 +23,7 @@ struct Cell {
     double v[DIM];
     double ctu[DIM];
     int32_t state[DIM];
+    double x[DIM];
     uint32_t iNodes[DIM]; // used list indexes
     uint32_t kNodes[DIM]; // used list indexes
     double dcu;
