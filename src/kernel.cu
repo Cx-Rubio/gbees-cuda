@@ -2,10 +2,10 @@
 #include "config.h"
 #include "kernel.h"
 #include <stdio.h>
-//#include <cuda_runtime_api.h> 
-//#include <cuda.h> 
 #include <cooperative_groups.h>
 #include "maths.h"
+
+namespace cg = cooperative_groups;
 
 /** Calculate gaussian probability at state x given mean and covariance */
 static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurements);
@@ -159,10 +159,9 @@ static __device__ void normalizeDistribution(double* probGlobalArray, Cell* cell
     // shared memory for reduction process
     __shared__ double probLocalArray[THREADS_PER_BLOCK];   
 
-    // synchronization
-    cooperative_groups::grid_group g = cooperative_groups::this_grid();  
+    // grid synchronization
+    cg::grid_group g = cg::this_grid();  
     
-
     int threadIndex = threadIdx.x;
     int blockIndex = blockIdx.x;
     int blockCount = gridDim.x;
@@ -182,14 +181,12 @@ static __device__ void normalizeDistribution(double* probGlobalArray, Cell* cell
         }
         __syncthreads();
     }
-    
-     g.sync();     
-        /*
+        
     if(threadIndex == 0){        
         // store total sum to global array
-        probGlobalArray[blockIndex] = probLocalArray[0];
+        probGlobalArray[blockIndex] = probLocalArray[0];       
         
-       g.sync(); // TODO check if needed for all the threads
+        g.sync();
         
         // reduction process in global memory    
         for(int s=1;s<blockCount;s*=2){
@@ -198,15 +195,16 @@ static __device__ void normalizeDistribution(double* probGlobalArray, Cell* cell
             if(indexSrc < blockCount){
                 probGlobalArray[indexDst] += probGlobalArray[indexSrc];            
             }
-        g.sync();; // TODO check if needed for all the threads
+            g.sync();
         }     
     }    
-     */
+     
     // at the end, the sum of the probability its at probGlobalArray[0]
+    /*
     if(threadIndex == 0){
         printf("prob block sum %e\n", probLocalArray[0]);
         }
-    
+    */
     if(threadIndex == 0 && blockIndex == 0){
             printf("prob sum %e\n", probGlobalArray[0]);
     }

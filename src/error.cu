@@ -18,7 +18,7 @@ const char* getErrorString(int err){
         case FORMAT_ERROR: return "format error";        
         case DIM_ERROR: return "dimension error";
         case GRID_ERROR: return "grid error";
-        case MATH_ERROR: return "math error";
+        case MATH_ERROR: return "math error";        
         default: return "";
     }
 }
@@ -86,7 +86,7 @@ void assertPositiveOrZero(int value, enum Error errorCode, const char* msg, ...)
 void handleError(enum Error errorCode, const char* msg, ...){
     va_list args;
     va_start(args, msg);    
-    printf(msg, args);
+    vprintf(msg, args);
     printf("\n");
     exit(errorCode);
 }

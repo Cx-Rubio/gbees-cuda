@@ -28,4 +28,12 @@ int selectBestDevice();
  */
 int getMaxThreadsPerBlock(int device);
 
+/**
+ * @brief Check if the device supports cooperative launch
+ * 
+ * @param device the device if
+ * @return if supports cooperative launch
+ */
+bool supportsCooperativeLaunch(int device);
+
 #endif

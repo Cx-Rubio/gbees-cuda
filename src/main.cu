@@ -26,7 +26,10 @@ static void signalHandler(int signal);
 static void printUsageAndExit(const char* command);
 
 /** Execute GBEES algorithm */
-static void executeGbees(bool autotest, int measurementCount);
+static void executeGbees(bool autotest, int measurementCount, int device);
+
+/** Check if the number of kernel colaborative blocks fits in the GPU device */
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(GridDefinition, Grid, Model, Global), int device);
 
 /**
  * @brief Main function 
@@ -59,7 +62,7 @@ int main(int argc, char **argv) {
     int measurementCount = 2; // TODO read parameter measurement count
 
     // execute GBEES algorithm
-    executeGbees(autotest, measurementCount); 
+    executeGbees(autotest, measurementCount, device); 
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
@@ -99,7 +102,7 @@ void printUsageAndExit(const char* command){
 }
 
 /** Execute GBEES algorithm */
-static void executeGbees(bool autotest, int measurementCount){
+static void executeGbees(bool autotest, int measurementCount, int device){
     // obtain model
     Model model;
     configureLorenz3D(&model);
@@ -138,11 +141,20 @@ static void executeGbees(bool autotest, int measurementCount){
         int threads = THREADS_PER_BLOCK;
         int blocks = (grid.usedSize+threads-1)/threads;
         
+        // check if the block count can fit in the GPU
+        checkCooperativeKernelSize(blocks, threads, initializationKernel, device);
+        
         HANDLE_CUDA(cudaMalloc(&global.probAccumulator, blocks * sizeof(double)));
         
+#ifdef ENABLE_LOG        
         printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
-        initializationKernel<<<blocks,threads>>>(gridDefinition, grid, model, global);
+#endif
         
+        void *kernelArgs[] = { &gridDefinition, &grid, &model, &global };
+        dim3 dimBlock(threads, 1, 1);
+        dim3 dimGrid(blocks, 1, 1);
+        cudaLaunchCooperativeKernel((void*)initializationKernel, dimGrid, dimBlock, kernelArgs);
+ 
         HANDLE_CUDA(cudaFree(global.probAccumulator)); 
     }
     
@@ -161,6 +173,22 @@ static void executeGbees(bool autotest, int measurementCount){
     
     // free host memory    
     freeMeasurementsHost(measurementsHost);
+}
+
+/** Check if the number of kernel colaborative blocks fits in the GPU device */
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(GridDefinition, Grid, Model, Global), int device){  
+    // TODO add condition to avoid the check to improve performance
+    cudaDeviceProp prop;
+    int numBlocksPerSm = 0;
+    HANDLE_CUDA(cudaGetDeviceProperties(&prop, device));
+    HANDLE_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, kernel, threads, 0));
+    int maxBlocks =  prop.multiProcessorCount * numBlocksPerSm;
     
-    
+#ifdef ENABLE_LOG    
+    printf("- Kernel size check: required %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
+#endif
+
+    if(blocks > maxBlocks){        
+        handleError(GPU_ERROR, "Error: Required blocks (%d) exceed GPU capacity (%d) for cooperative kernel launch\n", blocks, maxBlocks);
+    }
 }

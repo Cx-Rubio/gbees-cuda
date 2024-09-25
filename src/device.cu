@@ -26,7 +26,13 @@ int selectBestDevice(){
             maxMultiprocessors = prop.multiProcessorCount;
             device = i;
           }        
-    }    
+    }   
+
+    // Check if the device support cooperative launch
+    if(!supportsCooperativeLaunch(device)){
+        handleError(GPU_ERROR, "Selected device do not support cooperative launch\n");
+    }
+ 
     return device;
 }
 
@@ -40,6 +46,18 @@ int getMaxThreadsPerBlock(int device){
     cudaDeviceProp prop;
     HANDLE_CUDA(cudaGetDeviceProperties(&prop, device));
     return prop.maxThreadsPerBlock;
+}
+
+/**
+ * @brief Check if the device supports cooperative launch
+ * 
+ * @param device the device if
+ * @return if supports cooperative launch
+ */
+bool supportsCooperativeLaunch(int device){
+    int supportsCoopLaunch = 0;
+    HANDLE_CUDA(cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, device));    
+    return supportsCoopLaunch;
 }
 
 /**
@@ -64,7 +82,10 @@ void printDevices(void){
 void printDevice(int device){
     cudaDeviceProp prop;
     HANDLE_CUDA(cudaGetDeviceProperties(&prop, device));    
-    printf("\nDevice %d, %s, rev: %d.%d\n",device, prop.name, prop.major, prop.minor);    
+    printf("\nDevice %d, %s, rev: %d.%d\n",device, prop.name, prop.major, prop.minor); 
+    if(supportsCooperativeLaunch(device)){
+        printf("  supports cooperative launch\n");    
+    }
     printf("  max threads per block %d\n", prop.maxThreadsPerBlock);    
     printf("  max threads %d %d %d\n", prop.maxThreadsDim[0],prop.maxThreadsDim[1],prop.maxThreadsDim[2]);            
     printf("  max blocks %d %d %d\n", prop.maxGridSize[0],prop.maxGridSize[1],prop.maxGridSize[2]);
