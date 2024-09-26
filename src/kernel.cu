@@ -263,9 +263,9 @@ static __device__ void normalizeDistribution(int offsetIndex, int iterations, do
         }     
     }         
    
-    if(threadIdx.x == 0){
+    /*if(threadIdx.x == 0){
         printf("prob block sum %e\n", localArray[0]);
-        }
+        }*/
     
     // at the end, the sum of the probability its at globalArray[0]    
     if(threadIdx.x == 0 && blockIdx.x == 0){

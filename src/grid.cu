@@ -97,11 +97,11 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
     assertNotNull(usedListHost, MALLOC_ERROR, "Error allocating host memory for used list initialization");
     
     // allocate hashtable in host
-    HashTableEntry* hashtableHost = (HashTableEntry*)malloc(size * sizeof(HashTableEntry));
+    HashTableEntry* hashtableHost = (HashTableEntry*)malloc(2 * size * sizeof(HashTableEntry));
     assertNotNull(hashtableHost, MALLOC_ERROR, "Error allocating host memory for hashtable initialization");
     
     // clean hashtable memory
-    memset(hashtableHost, 0, size * sizeof(HashTableEntry));
+    memset(hashtableHost, 0, 2 * size * sizeof(HashTableEntry));
     
     // recursive initialization of the hashtable and used list 
     int32_t key[DIM];
@@ -115,7 +115,7 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
     HANDLE_CUDA( cudaMemcpy( grid->usedList , usedListHost, size * sizeof(UsedListEntry), cudaMemcpyHostToDevice) );
     
     // copy hashtable from host to device
-    HANDLE_CUDA( cudaMemcpy( grid->table , hashtableHost, size * sizeof(HashTableEntry), cudaMemcpyHostToDevice) );
+    HANDLE_CUDA( cudaMemcpy( grid->table , hashtableHost, 2 * size * sizeof(HashTableEntry), cudaMemcpyHostToDevice) );
     
     // free host memory
     free(usedListHost);

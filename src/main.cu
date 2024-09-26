@@ -29,7 +29,7 @@ static void printUsageAndExit(const char* command);
 static void executeGbees(bool autotest, int measurementCount, int device);
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Grid, Model, Global), int device);
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Grid, Model, Global), size_t sharedMemory, int device);
 
 /**
  * @brief Main function 
@@ -141,18 +141,18 @@ static void executeGbees(bool autotest, int measurementCount, int device){
         gridTest<<<1,1>>>(grid);    
     } else {            
         // check if the block count can fit in the GPU
-        checkCooperativeKernelSize(blocks, threads, gbeesKernel, device);
+        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;
+        checkCooperativeKernelSize(blocks, threads, gbeesKernel, sharedMemorySize, device);
         
         HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
         
 #ifdef ENABLE_LOG        
-        printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);      
+        printf("\n -- Launch kernel with %d blocks of %d threads -- \n", blocks, threads);      
 #endif
         
         void *kernelArgs[] = { &iterations, &gridDefinition, &grid, &model, &global };
         dim3 dimBlock(threads, 1, 1);
-        dim3 dimGrid(blocks, 1, 1);
-        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;
+        dim3 dimGrid(blocks, 1, 1);        
         cudaLaunchCooperativeKernel((void*)gbeesKernel, dimGrid, dimBlock, kernelArgs, sharedMemorySize);
  
         HANDLE_CUDA(cudaFree(global.reductionArray)); 
@@ -176,16 +176,16 @@ static void executeGbees(bool autotest, int measurementCount, int device){
 }
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Grid, Model, Global), int device){  
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Grid, Model, Global), size_t sharedMemory, int device){  
     // TODO add condition to avoid the check to improve performance
     cudaDeviceProp prop;
     int numBlocksPerSm = 0;
     HANDLE_CUDA(cudaGetDeviceProperties(&prop, device));
-    HANDLE_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, kernel, threads, 0));
+    HANDLE_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, kernel, threads, sharedMemory));
     int maxBlocks =  prop.multiProcessorCount * numBlocksPerSm;
     
 #ifdef ENABLE_LOG    
-    printf("- Kernel size check: launching %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
+    printf("- Kernel size check: intended %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
 #endif
 
     if(blocks > maxBlocks){        

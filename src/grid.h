@@ -1,7 +1,7 @@
 // Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
-#ifndef MEMORY_H
-#define MEMORY_H
+#ifndef GRID_H
+#define GRID_H
 
 #include <stdint.h>
 #include "config.h"
