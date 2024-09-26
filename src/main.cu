@@ -29,7 +29,7 @@ static void printUsageAndExit(const char* command);
 static void executeGbees(bool autotest, int measurementCount, int device);
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(GridDefinition, Grid, Model, Global), int device);
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Grid, Model, Global), int device);
 
 /**
  * @brief Main function 
@@ -103,6 +103,11 @@ void printUsageAndExit(const char* command){
 
 /** Execute GBEES algorithm */
 static void executeGbees(bool autotest, int measurementCount, int device){
+    // grid configuration
+    int threads = THREADS_PER_BLOCK;
+    int blocks = BLOCKS;
+    int iterations = CELLS_PER_THREAD;    
+        
     // obtain model
     Model model;
     configureLorenz3D(&model);
@@ -119,6 +124,7 @@ static void executeGbees(bool autotest, int measurementCount, int device){
     // fill grid definition (max cells, probability threshold, center, grid width, ...) 
     GridDefinition gridDefinition;
     model.configureGrid(&gridDefinition, &measurementsHost[0]);
+    gridDefinition.maxCells = threads * blocks * iterations;
     
     // allocate grid (hashtable, lists, and heap)
     Grid grid;
@@ -130,30 +136,24 @@ static void executeGbees(bool autotest, int measurementCount, int device){
     Global global; // global memory
     global.measurements = measurementsDevice;
     
-    if(autotest){
-        int blocks = 1;
-        int threads = 1;
-        
-        printf("Launch test kernel\n");
-        
-        gridTest<<<blocks,threads>>>(grid);    
-    } else {
-        int threads = THREADS_PER_BLOCK;
-        int blocks = (grid.usedSize+threads-1)/threads;
-        
+    if(autotest){        
+        printf("Launch test kernel\n");        
+        gridTest<<<1,1>>>(grid);    
+    } else {            
         // check if the block count can fit in the GPU
-        checkCooperativeKernelSize(blocks, threads, initializationKernel, device);
+        checkCooperativeKernelSize(blocks, threads, gbeesKernel, device);
         
         HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
         
 #ifdef ENABLE_LOG        
-        printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);
+        printf("\n -- Launch initialization kernel with %d blocks of %d threads -- \n", blocks, threads);      
 #endif
         
-        void *kernelArgs[] = { &gridDefinition, &grid, &model, &global };
+        void *kernelArgs[] = { &iterations, &gridDefinition, &grid, &model, &global };
         dim3 dimBlock(threads, 1, 1);
         dim3 dimGrid(blocks, 1, 1);
-        cudaLaunchCooperativeKernel((void*)initializationKernel, dimGrid, dimBlock, kernelArgs);
+        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;
+        cudaLaunchCooperativeKernel((void*)gbeesKernel, dimGrid, dimBlock, kernelArgs, sharedMemorySize);
  
         HANDLE_CUDA(cudaFree(global.reductionArray)); 
     }
@@ -176,7 +176,7 @@ static void executeGbees(bool autotest, int measurementCount, int device){
 }
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(GridDefinition, Grid, Model, Global), int device){  
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Grid, Model, Global), int device){  
     // TODO add condition to avoid the check to improve performance
     cudaDeviceProp prop;
     int numBlocksPerSm = 0;
@@ -185,7 +185,7 @@ static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(G
     int maxBlocks =  prop.multiProcessorCount * numBlocksPerSm;
     
 #ifdef ENABLE_LOG    
-    printf("- Kernel size check: required %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
+    printf("- Kernel size check: launching %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
 #endif
 
     if(blocks > maxBlocks){        

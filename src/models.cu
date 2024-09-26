@@ -90,8 +90,7 @@ __device__ static  void zLorenz3D(double* h, double* x, double* dx){
  * @param grid [output] the grid definition object to configure
  * @param firstMeasurement the first measurement
  */
-static void configureGridLorenz3D(GridDefinition *grid, Measurement *firstMeasurement){
-    grid->maxCells = 1e4;
+static void configureGridLorenz3D(GridDefinition *grid, Measurement *firstMeasurement){    
     grid->dt = DBL_MAX;
     grid->threshold = 5E-6;    
     grid->hi_bound = DBL_MAX;

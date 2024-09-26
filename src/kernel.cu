@@ -8,6 +8,9 @@
 
 namespace cg = cooperative_groups;
 
+/** Initialize cells */
+static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid, Model* model, Global* global);
+
 /** Calculate gaussian probability at state x given mean and covariance */
 static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurements);
 
@@ -20,8 +23,11 @@ static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIn
 /** Initialize boundary value */
 static __device__ void initializeBoundary(Cell* cell, Model* model);
 
+/** Initialize Grid boundary */
+static __device__ void initializeGridBoundary(int offsetIndex, int iterations, double* localArray, GridDefinition* gridDefinition, Grid* grid, Global* global);
+
 /** Normalize probability distribution */
-static __device__ void normalizeDistribution(double* localArray, double* globalArray, Cell* cell, double prob);
+static __device__ void normalizeDistribution(int offsetIndex, int iterations, double* localArray, double* globalArray, Grid* grid);
 
 /** Compute grid bounds */
 static __device__ void gridBounds(double* output, double* localArray, double* globalArray, double boundaryValue, double(*fn)(double, double) );
@@ -29,70 +35,38 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
 /** 
  * @brief Initialization kernel function 
  * 
+ * @param iterations number of cells that should process the same thread
  * @param gridDefinition the grid definition
  * @param grid the grid object
  * @param model the model
  * @param measurements the list of measurements
  */
-__global__ void initializationKernel(GridDefinition gridDefinition, Grid grid, Model model, Global global){ // FIXME if separate the kernels, needs to keep the bounds changes in gridDefinition (check other parameters)
+__global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Grid grid, Model model, Global global){
     
     // shared memory for reduction processes
     __shared__ double localArray[THREADS_PER_BLOCK];   
     
-    // get used list index
-    int usedIndex = (uint32_t)(threadIdx.x + blockIdx.x * blockDim.x);        
+    // get used list offset index
+    int offsetIndex = threadIdx.x + blockIdx.x * blockDim.x * iterations;     
     
-    // intialize cells
-    double prob = 0.0;
-    Cell* cell = NULL;
-    if(usedIndex < grid.usedSize){    
-        // used list entry
-        UsedListEntry* usedListEntry = grid.usedList + usedIndex;
-        
-        // obtain key (state coordinates)
-        uint32_t hashtableIndex = usedListEntry->hashTableIndex;
-        int32_t* key = grid.table[hashtableIndex].key;
-        
-        // compute initial probability    
-        prob = gaussProbability(key, &gridDefinition, global.measurements);
-        
-        // update cell
-        uint32_t heapIndex = usedListEntry->heapIndex;    
-        cell = &grid.heap[heapIndex];
-        cell->new_f = 0;
-        
-        // compute state
-        for(int i=0;i<DIM;i++){
-            cell->state[i] = key[i]; // state coordinates
-            cell->x[i] = gridDefinition.dx[i] * key[i] + gridDefinition.center[i]; // state value
-        }
-        
-        cell->prob = prob; 
-        initializeAdv(&gridDefinition, &model, cell);
-        initializeIkNodes(&grid, cell, usedIndex);    
-        
-        // initialize bounday value
-        if(model.useBounds){
-            initializeBoundary(cell, &model);
-        }
-    }
+    // initialize cells
+    for(int iter=0;iter<iterations;iter++){        
+        int usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list                
+        initializeCell(usedIndex, &gridDefinition, &grid, &model, &global); // initialize cell
+    }    
     
-    if(model.useBounds){
-        // set grid maximum and minimum bounds
-        double boundaryValue = (cell != NULL)? cell->bound_val : -DBL_MAX;
-        gridBounds(&gridDefinition.hi_bound, localArray, global.reductionArray, boundaryValue, fmax);
+    // set grid maximum and minimum bounds
+    if(model.useBounds){ // TODO test use bounds
+        initializeGridBoundary(offsetIndex, iterations, localArray, &gridDefinition, &grid, &global);   
         
-        if(cell == NULL) { boundaryValue = DBL_MAX; };
-        gridBounds(&gridDefinition.lo_bound, localArray, global.reductionArray, boundaryValue, fmin);
-        
-        /*if(usedIndex == 0){
+        /* if(offsetIndex == 0){
             printf("Bounds min %e\n", gridDefinition.lo_bound);
             printf("Bounds max %e\n", gridDefinition.hi_bound);
-        }*/
+        } */
     }
     
     // normalize distribution
-    normalizeDistribution(localArray, global.reductionArray, cell, prob);
+    normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, &grid);
 
     //if(key[0] == -3 && key[1] == -2 && key[2] == 5) printf("Probability %e\n", prob);
     //if(usedIndex == 100) printf("Probability of %d,%d,%d : %f\n", key[0], key[1], key[2], prob);
@@ -121,6 +95,43 @@ __global__ void initializationKernel(GridDefinition gridDefinition, Grid grid, M
         }            
     }*/
     
+}
+
+/** Initialize cells */
+static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid, Model* model, Global* global){
+    // intialize cells
+    double prob = 0.0;
+    Cell* cell = NULL;
+    if(usedIndex < grid->usedSize){    
+        // used list entry
+        UsedListEntry* usedListEntry = grid->usedList + usedIndex;
+        
+        // obtain key (state coordinates)
+        uint32_t hashtableIndex = usedListEntry->hashTableIndex;
+        int32_t* key = grid->table[hashtableIndex].key;
+        
+        // compute initial probability    
+        prob = gaussProbability(key, gridDefinition, global->measurements);
+        
+        // update cell          
+        cell = getCell(usedIndex, grid);
+        cell->new_f = 0;
+        
+        // compute state
+        for(int i=0;i<DIM;i++){
+            cell->state[i] = key[i]; // state coordinates
+            cell->x[i] = gridDefinition->dx[i] * key[i] + gridDefinition->center[i]; // state value
+        }
+        
+        cell->prob = prob; 
+        initializeAdv(gridDefinition, model, cell);
+        initializeIkNodes(grid, cell, usedIndex);    
+        
+        // initialize bounday value
+        if(model->useBounds){
+            initializeBoundary(cell, model);
+        }
+    }    
 }
 
 /** Calculate gaussian probability at state x given mean and covariance */
@@ -189,13 +200,39 @@ static __device__ void initializeBoundary(Cell* cell, Model* model){
     cell->bound_val = j;
 }
 
+static __device__ void initializeGridBoundary(int offsetIndex, int iterations, double* localArray, GridDefinition* gridDefinition, Grid* grid, Global* global){
+    double boundaryValue = -DBL_MAX;    
+    for(int iter=0;iter<iterations;iter++){        
+        // index in the used list
+        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        Cell* cell = getCell(usedIndex, grid);        
+        if(cell != NULL && cell->bound_val > boundaryValue) boundaryValue = cell->bound_val;
+    }
+    gridBounds(&gridDefinition->hi_bound, localArray, global->reductionArray, boundaryValue, fmax);
+    
+    boundaryValue = DBL_MAX;   
+    for(int iter=0;iter<iterations;iter++){        
+        // index in the used list
+        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        Cell* cell = getCell(usedIndex, grid);        
+        if(cell != NULL && cell->bound_val < boundaryValue) boundaryValue = cell->bound_val;
+    }
+    gridBounds(&gridDefinition->lo_bound, localArray, global->reductionArray, boundaryValue, fmin);
+}
+
+
 /** Normalize probability distribution */
-static __device__ void normalizeDistribution(double* localArray, double* globalArray, Cell* cell, double prob){    
+static __device__ void normalizeDistribution(int offsetIndex, int iterations, double* localArray, double* globalArray, Grid* grid){        
     // grid synchronization
     cg::grid_group g = cg::this_grid();      
-    
-    // store cell probability in the reduction array
-    localArray[threadIdx.x] = prob;
+   
+    // store the sum of the cells probability for all the iterations at the local reduction array
+    localArray[threadIdx.x] = 0.0;
+    for(int iter=0;iter<iterations;iter++){
+        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);           
+        Cell* cell = getCell(usedIndex, grid); 
+        if(cell != NULL) localArray[threadIdx.x] += cell->prob;
+    }
     
     __syncthreads();
     
@@ -208,7 +245,7 @@ static __device__ void normalizeDistribution(double* localArray, double* globalA
         }
         __syncthreads();
     }
-        
+         
     if(threadIdx.x == 0){        
         // store total sum to global array
         globalArray[blockIdx.x] = localArray[0];       
@@ -224,22 +261,23 @@ static __device__ void normalizeDistribution(double* localArray, double* globalA
             }
             g.sync();
         }     
-    }    
-     
-    // at the end, the sum of the probability its at globalArray[0]
-    /*
+    }         
+   
     if(threadIdx.x == 0){
         printf("prob block sum %e\n", localArray[0]);
         }
-    */
+    
+    // at the end, the sum of the probability its at globalArray[0]    
     if(threadIdx.x == 0 && blockIdx.x == 0){
             printf("prob sum %e\n", globalArray[0]);
     }
     
-    // update the probability of the cell
-    if(cell != NULL){
-        cell->prob /= globalArray[0];    
-    }
+    // update the probability of the cells
+    for(int iter=0;iter<iterations;iter++){
+        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        Cell* cell = getCell(usedIndex, grid); 
+        if(cell != NULL) cell->prob /= globalArray[0];                    
+    }    
 }
 
 /** Set the grid definition bounds with the max and min boundary values of the initial grid cells */
