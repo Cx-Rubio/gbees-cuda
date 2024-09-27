@@ -14,7 +14,7 @@ static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDe
 /** Calculate gaussian probability at state x given mean and covariance */
 static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurements);
 
-/** Initialize ADV */
+/** Initialize advection values */
 static __device__ void initializeAdv(GridDefinition* gridDefinition, Model* model, Cell* cell);
 
 /** Initialize ik nodes */
@@ -31,6 +31,18 @@ static __device__ void normalizeDistribution(int offsetIndex, int iterations, do
 
 /** Compute grid bounds */
 static __device__ void gridBounds(double* output, double* localArray, double* globalArray, double boundaryValue, double(*fn)(double, double) );
+
+/** Grow grid */
+static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model);
+
+/** Grow grid from one cell */
+static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model);
+
+/** Grow grid from one cell in one dimension and direction */
+static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model);
+
+/** Create new cell in the grid */
+static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** 
  * @brief Initialization kernel function 
@@ -72,7 +84,7 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Grid 
     //if(usedIndex == 100) printf("Probability of %d,%d,%d : %f\n", key[0], key[1], key[2], prob);
     
     /*if(key[0] == 6 && key[1] == 6 && key[2] == 0){
-    //if(usedIndex == 0){    
+    if(usedIndex == 0){    
         printf("key %d, %d, %d\n",cell->state[0],cell->state[1],cell->state[2]);
         int dim = 0;
         uint32_t iNode = cell->iNodes[dim];
@@ -94,15 +106,56 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Grid 
             printf("Mo kNode\n");
         }            
     }*/
+    // for each measurement
+    for(int nm=0;nm<model.numMeasurements;nm++){
+        // select active measurement
+        Measurement* measurement = &global.measurements[nm];
+        
+        // propagate probability distribution until the next measurement
+        double mt = 0.0; // time propagated from the last measurement
+        //int stepCount = 1; // step count
+        while(fabs(mt - measurement->T) > TOL) { 
+            growGrid(offsetIndex, iterations, &gridDefinition, &grid, &model);
+            
+            /*
+            check_cfl_condition();
+            godunov_method();
+            update_prob();
+            normalize_tree();
+            
+            if (step_count % DEL_STEP == 0) { // deletion procedure
+                prune_tree();
+                normalize_tree(); 
+            }
+         
+            stepCount++;
+            */
+            // FIXME take account of G.dt
+            break; // FIXME remove
+        }
+        
+        // perform Bayesian update for the next measurement
+        if(nm < model.numMeasurements -1){
+            /*
+            meas_up_recursive();
+            normalize_tree();
+            prune_tree();
+            normalize_tree(); 
+            */
+        }
+        break; // FIXME remove
+    }
+    
     
 }
 
 /** Initialize cells */
 static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid, Model* model, Global* global){
-    // intialize cells
-    double prob = 0.0;
-    Cell* cell = NULL;
+    // intialize cells    
     if(usedIndex < grid->usedSize){    
+        double prob = 0.0;
+        Cell* cell = NULL;
+    
         // used list entry
         UsedListEntry* usedListEntry = grid->usedList + usedIndex;
         
@@ -147,7 +200,7 @@ static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefi
     return exp(-0.5 * dotProduct);
 }
 
-/** Initialize ADV */
+/** Initialize advection values */
 static __device__ void initializeAdv(GridDefinition* gridDefinition, Model* model, Cell* cell){        
     double xk[DIM];
     (*model->callbacks->f)(xk, cell->x, gridDefinition->dx); 
@@ -320,4 +373,87 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
         }
         g.sync();
     }        
+}
+
+/** Grow grid */
+static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){
+    for(int iter=0;iter<iterations;iter++){ 
+        int usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list  
+        if(usedIndex < grid->usedSize){ 
+            Cell* cell = getCell(usedIndex, grid);
+            if(cell->prob >= gridDefinition->threshold){
+                growGridFromCell(cell, gridDefinition, grid, model);
+            }
+        }        
+    }
+
+    // TODO update ik nodes (at the end of the inserts)    
+}
+
+/** Grow grid from one cell */
+static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model){
+    for(int dimension=0;dimension<DIM;dimension++){
+        if(cell->v[dimension] > 0.0){
+            growGridDireccional(cell, dimension, FORWARD, gridDefinition, grid, model);        
+        } else if(cell->v[dimension] < 0.0){
+            growGridDireccional(cell, dimension, BACKWARD, gridDefinition, grid, model);    
+        }
+    }
+}
+
+/** Grow grid from one cell in one dimension and direction */
+static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model){
+    // check if already exists next face
+    uint32_t nextFaceIndex = 0; // initialized to null reference
+    int32_t state[DIM]; // state indexes for the new cells
+    if(direction == FORWARD) nextFaceIndex = cell->kNodes[dimension];
+    else nextFaceIndex = cell->iNodes[dimension];
+    
+    // create next face if not exists
+    if(!nextFaceIndex){
+        // create new cell key[dimension] = cell->key[dimension]+direction
+        copyKey(cell->state, state);
+        state[dimension] += direction;
+        createCell(state, gridDefinition, grid, model);
+    }
+    
+    // check edges
+    for (int j = 0; j < DIM; j++){
+        if(j != dimension){
+            if(cell->v[j] > 0.0){
+                // create new cell key[dimension] = cell->key[dimension] = key[dimension]+direction & cell->key[j] = cell->key[j]+1
+                copyKey(cell->state, state);
+                state[dimension] += direction;
+                state[j] +=1;
+                createCell(state, gridDefinition, grid, model);
+            } else if(cell->v[j] < 0.0){
+                // create new cell key[dimension] = cell->key[dimension] = key[dimension]+direction & cell->key[j] = cell->key[j]-1
+                copyKey(cell->state, state);
+                state[dimension] += direction;
+                state[j] -=1;
+                createCell(state, gridDefinition, grid, model);
+            }
+        }
+    }    
+}
+
+/** Create new cell in the grid */
+static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model){
+    Cell cell;
+    
+    // compute state
+    for(int i=0;i<DIM;i++){
+        cell.state[i] = state[i]; // state coordinates
+        cell.x[i] = gridDefinition->dx[i] * state[i] + gridDefinition->center[i]; // state value
+    }
+        
+    cell.prob = 0.0; 
+    cell.new_f = 0;
+    cell.ik_f = 0;
+    initializeAdv(gridDefinition, model, &cell);
+    // TODO initialize ctu[] y dcu
+    
+    // FIXME shyncro, critical region
+    insertCell(&cell, grid);
+    
 }

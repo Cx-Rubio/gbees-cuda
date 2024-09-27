@@ -95,5 +95,11 @@ __device__ Cell* findCell(int32_t* state, Grid* grid);
  */
 __device__ Cell* getCell(uint32_t index, Grid* grid);
 
+/**
+ * @brief Copy cell key (state indexes)
+ * @param src origin
+ * @param dst destination
+ */
+__host__ __device__ void copyKey(int32_t* src, int32_t* dst);
 
 #endif

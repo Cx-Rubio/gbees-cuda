@@ -12,6 +12,11 @@ typedef struct {
     Measurement* measurements;
 } Global;
 
+/** Time step tolerance */
+#define TOL 1E-8
+
+/** Enum to codify the direction of grid growing */
+enum Direction {FORWARD=1, BACKWARD=-1};
 
 /** 
  * @brief Initialization kernel function 

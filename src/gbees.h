@@ -28,8 +28,8 @@ struct Cell {
     uint32_t kNodes[DIM]; // used list indexes
     double dcu;
     double cfl_dt;
-    int new_f;
-    int ik_f;
+    int new_f; // TODO check if remove
+    int ik_f; // TODO check if remove
     double bound_val;    
 };
 

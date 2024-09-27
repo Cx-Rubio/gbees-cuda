@@ -11,7 +11,6 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
 /**  Private functions declaration (device) */
 static __host__ __device__ uint32_t computeHash(int32_t* state);
 static __device__ bool equalState(int32_t* state1, int32_t* state2);
-static __host__ __device__ void copyKey(int32_t* src, int32_t* dst);
 static __device__ void copyCell(Cell* src, Cell* dst);
 
 /** --- Device global memory allocations  (host) --- */
@@ -161,6 +160,16 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
     }            
 } 
 
+/**
+ * @brief Copy cell key (state indexes)
+ * @param src origin
+ * @param dst destination
+ */
+__host__ __device__ void copyKey(int32_t* src, int32_t* dst){
+    for(int i=0; i<DIM; i++){
+        dst[i] = src[i];
+    }   
+}
 
 /**  --- Private functions implementation (device) ---  */
 
@@ -177,13 +186,6 @@ static __device__ bool equalState(int32_t* state1, int32_t* state2){
         if(state1[i] != state2[i]) return false;
     }    
     return true;
-}
-
-/** Copy key */
-static __host__ __device__ void copyKey(int32_t* src, int32_t* dst){
-    for(int i=0; i<DIM; i++){
-        dst[i] = src[i];
-    }   
 }
 
 /** Copy cell contents */
