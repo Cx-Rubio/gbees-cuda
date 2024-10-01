@@ -55,7 +55,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 
 
 /** Perform the Godunov scheme on the discretized PDF*/
-static __global__ void godunovMethod(int iterations, Grid* grid, GridDefinition* gridDef);
+static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Compute the donor cell upwind value for each grid cell */
 static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef);
@@ -72,176 +72,11 @@ static __device__ double uMinus(double v);
 /** MC flux limiter */
 static __device__ double fluxLimiter(double th);
 
-	
-/** 
- * @brief This function performs the Godunov scheme on the discretized PDF, which is 2nd-order accurate
-          and total variation diminishing
- * 
- * @param cell the cell object
- * @param grid the grid object
- * @param gridDefinition the grid definition
- */
-static __global__ void godunovMethod(int iterations, Grid* grid, GridDefinition* gridDef)
-{
-    int offsetIndex = threadIdx.x + blockIdx.x * blockDim.x * iterations;     
-    int usedIndex;
-    Cell* cell;
-    // initialize cells
-    for(int iter=0;iter<iterations;iter++){        
-      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
-      cell = getCell(usedIndex, grid); 
-      updateDcu(cell, grid, gridDef);
-      updateCtu(cell, grid, gridDef);
+/** Update probability */
+static __device__ void updateProbability(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
-    }
-}
-
-
-static __device__ double uPlus(double v){
-  return fmax(v, 0.0);
-}
-
-static __device__ double uMinus(double v){
-  return fmin(v, 0.0);
-}
-
-static __device__ double computeFlux(Cell* cell, Cell* iCell, GridDefinition* G, int i)
-{
-  double F = G->dt*(cell->prob-iCell->prob)/(2*G->dx[i]);
-  return F;
-}
-
-static __device__ double fluxLimiter(double th)
-{
-  double min1 = (1.0 + th)/2.0;
-  min1 = fmin(min1, 2.0);
-  min1 = fmax(min1, 2.0*th);
-  return min1;
-}
-
-static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef)
-{
-
-  if (cell==NULL){
-    return;
-  }
-  double vUpstream;
-  double vDownstream;
-  
-  cell->dcu = 0;
-  Cell* iCell; Cell* kCell;
-    for(int i = 0; i < DIM; i++){
-        cell->ctu[i] = 0.0;
-        iCell = getCell(cell->iNodes[i], grid);
-        kCell = getCell(cell->kNodes[i], grid);
-
-        double dcu_p = 0;
-        double dcu_m = 0;
-
-	/* Original implementation */
-	//vUpstream = iCell->v[i];
-	//vDownstream = cell->v[i];
-
-	/*Corrected implementation */
-	// Valid only for equispaced meshes
-	vUpstream = 0.5*(iCell->v[i] + cell->v[i]);
-	vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
-	
-	
-        if(kCell != NULL){
-          dcu_p = uPlus(vDownstream) * cell->prob + uMinus(vDownstream) * kCell->prob;
-        }else{
-          dcu_p = uPlus(vDownstream) * cell->prob;
-        }
-        if(iCell != NULL){
-            dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
-        }
-        cell->dcu -= (gridDef->dt/gridDef->dx[i])*(dcu_p-dcu_m);
-    }
-
-}
-
-static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef)
-{
-  if (cell == NULL)
-    {
-      return;
-    }
-    Cell* iCell;
-    Cell* jCell;
-    Cell* pCell;
-    Cell* iiCell;
-    Cell* kCell;
-    double th;
-    double F;
-    
-    for(int i = 0; i < DIM; i++){
-        iCell = getCell(cell->iNodes[i], grid);
-        //TreeNode* i_node = r->i_nodes[i];
-        //TreeNode* j_node; TreeNode* p_node;
-        if(iCell!=NULL){
-          F = computeFlux(cell, iCell, gridDef, i);
-	/* Original implementation */
-	//vUpstream = iCell->v[i];
-	//vDownstream = cell->v[i];
-
-	/*Corrected implementation */
-	// Valid only for equispaced meshes
-	double vUpstream = 0.5*(iCell->v[i] + cell->v[i]);
-	double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
-
-	  
-    for(int j = 0; j < DIM; j++){
-
-	      double vUpstream_j = 0.5*(iCell->v[j] + cell->v[j]);
-	      double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
-
-	      
-                if (j!=i){
-                  jCell = getCell(cell->iNodes[j], grid);
-                  pCell = getCell(iCell->iNodes[j], grid);
-
-                  cell->ctu[j]      -= uPlus(vUpstream) * uPlus(cell->v[j]) * F;
-                  iCell->ctu[j] -= uMinus(vUpstream) * uMinus(iCell->v[j]) * F;
-
-                  if(jCell!=NULL){
-                        jCell->ctu[j] -= uPlus(vUpstream) * uMinus(jCell->v[j]) * F;
-                    }
-                    if(pCell!=NULL){
-                        pCell->ctu[j] -= uMinus(vUpstream) * uMinus(pCell->v[j]) * F;
-                    }
-                }
-            }
-
-
-	    //High-Resolution Correction Terms
-
-            if (vUpstream>0){
-                iiCell = getCell(iCell->iNodes[i], grid);
-		if(iiCell != NULL){
-                    th = (iCell->prob-iiCell->prob)/(cell->prob-iCell->prob);
-                }
-		else
-		{
-                    th = (iCell->prob)/(cell->prob-iCell->prob);
-                }
-            }else{
-
-	      kCell = getCell(cell->kNodes[i], grid);
-                if(kCell != NULL){
-                    th = (kCell->prob - cell->prob)/(cell->prob - iCell->prob);
-                }else{
-                    th = (-cell->prob)/(cell->prob - iCell->prob);
-                }
-            }
-
-            iCell->ctu[i] += fabs(vUpstream)*(gridDef->dx[i]/gridDef->dt - fabs(vUpstream))*F*fluxLimiter(th);
-    
-            }
-    }
-
-
-}
+/** Update probability for one cell */
+static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef);
 	
 /** 
  * @brief Initialization kernel function 
@@ -314,33 +149,34 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model
         Measurement* measurement = &global.measurements[nm];
         
         // propagate probability distribution until the next measurement
-        double mt = 0.0; // time propagated from the last measurement
-        //int stepCount = 1; // step count
-        while(fabs(mt - measurement->T) > TOL) { 
+        double mt = 0.0; // time propagated from the last measurement        
+        int stepCount = 1; // step count
+        
+        while(fabs(mt - measurement->T) > TOL) {             
             growGrid(offsetIndex, iterations, &gridDefinition, global.grid, &model);
-            updateIkNodes(offsetIndex, iterations, global.grid);
-            
-            // TODO remove
-            /*            
-            g.sync();    
-            if(threadIdx.x == 0) printf("used size: %d\n", global.grid->usedSize);*/
-            
-            checkCflCondition(offsetIndex, iterations, localArray, &gridDefinition, &global);
-    
+            updateIkNodes(offsetIndex, iterations, global.grid);            
+            checkCflCondition(offsetIndex, iterations, localArray, &gridDefinition, &global);            
+            godunovMethod(offsetIndex, iterations, &gridDefinition, global.grid);
+            //g.sync();
             /*
-            
-            godunov_method();
-            update_prob();
-            normalize_tree();
-            
-            if (step_count % DEL_STEP == 0) { // deletion procedure
-                prune_tree();
-                normalize_tree(); 
+            updateProbability(offsetIndex, iterations, &gridDefinition, global.grid);
+            normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
+                        
+            if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
+                // prune_tree(); TODO implement
+                normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
             }
-         
-            stepCount++;
             */
-            // FIXME take account of G.dt
+            /**
+             if ((OUTPUT) && (step_count % OUTPUT_FREQ == 0)) { // print size to terminal
+                    printf("Timestep: %d-%d, Program time: %f s, Sim. time: %f", nm, step_count, ((double)(clock()-start))/CLOCKS_PER_SEC, tt + mt + rt); 
+                    printf(" TU, Active/Total Cells: %d/%d, Max key %%: %e\n", a_count, tot_count, (double)(max_key)/(pow(2,64)-1)*100); 
+                }*/
+         
+            stepCount++;            
+            mt += gridDefinition.dt;
+            gridDefinition.dt = DBL_MAX;
+            
             break; // FIXME remove
         }
         
@@ -719,4 +555,161 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
     
     // insert cell
     insertCellConcurrent(&cell, grid);
+}
+
+/** 
+ * Perform the Godunov scheme on the discretized PDF. 
+ * This function performs the Godunov scheme on the discretized PDF, which is 2nd-order accurate and total variation diminishing
+ */
+static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
+    int usedIndex;
+    Cell* cell;
+    // initialize cells
+    for(int iter=0;iter<iterations;iter++){        
+      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+      cell = getCell(usedIndex, grid); 
+      if(cell != NULL){
+        updateDcu(cell, grid, gridDefinition);
+        updateCtu(cell, grid, gridDefinition);
+      }
+    }
+}
+
+static __device__ double uPlus(double v){
+  return fmax(v, 0.0);
+}
+
+static __device__ double uMinus(double v){
+  return fmin(v, 0.0);
+}
+
+static __device__ double computeFlux(Cell* cell, Cell* iCell, GridDefinition* gridDefinition, int dimension) {
+  return gridDefinition->dt*(cell->prob - iCell->prob) / (2.0 * gridDefinition->dx[dimension]);  
+}
+
+static __device__ double fluxLimiter(double th) {
+  /** Adrian
+  double min1 = (1.0 + th)/2.0;
+  min1 = fmin(min1, 2.0);
+  min1 = fmax(min1, 2.0*th);
+  return min1; */
+  
+  // original
+  double min1 = fmin((1 + th)/2.0, 2.0);
+  return fmax(0.0, fmin(min1, 2*th)); 
+}
+
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef) {    
+    cell->dcu = 0;   
+    for(int i=0; i<DIM; i++){
+        cell->ctu[i] = 0.0;
+        Cell* iCell = getCell(cell->iNodes[i], grid);
+        Cell* kCell = getCell(cell->kNodes[i], grid);
+
+        double dcu_p = 0;
+        double dcu_m = 0;
+
+        /* Original implementation */        
+        double vDownstream = cell->v[i];
+
+        /*Corrected implementation (valid only for equispaced meshes) */
+        //double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);	
+	
+        if(kCell != NULL){
+          dcu_p = uPlus(vDownstream) * cell->prob + uMinus(vDownstream) * kCell->prob;
+        }else{
+          dcu_p = uPlus(vDownstream) * cell->prob;
+        }
+        if(iCell != NULL){
+            double vUpstream = iCell->v[i]; // original implementation
+            // double vUpstream = 0.5*(iCell->v[i] + cell->v[i]); // corrected implementation (valid only for equispaced meshes)
+            dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
+        }
+        cell->dcu -= (gridDef->dt/gridDef->dx[i])*(dcu_p-dcu_m);
+    }
+}
+
+// TODO check if needed to synch between dtu and ctu
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {     
+    // grid synchronization
+    cg::grid_group g = cg::this_grid(); 
+    g.sync();
+     
+    for(int i=0; i<DIM; i++){
+        Cell* iCell = getCell(cell->iNodes[i], grid);
+        if(iCell == NULL) continue;    
+        double flux = computeFlux(cell, iCell, gridDef, i);
+        
+        /* Original implementation */
+        double vUpstream = iCell->v[i];
+        //double vDownstream = cell->v[i];
+
+        /*Corrected implementation */
+        // Valid only for equispaced meshes
+        //double vUpstream = 0.5*(iCell->v[i] + cell->v[i]);
+        //double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
+	  
+        for(int j=0; j<DIM; j++){
+            if(j == i) continue;
+            
+            //double vUpstream_j = 0.5*(iCell->v[j] + cell->v[j]);
+            //double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
+
+            Cell* jCell = getCell(cell->iNodes[j], grid);
+            Cell* pCell = getCell(iCell->iNodes[j], grid);
+
+            cell->ctu[j]  -= uPlus(vUpstream) * uPlus(cell->v[j]) * flux;
+            iCell->ctu[j] -= uMinus(vUpstream) * uMinus(iCell->v[j]) * flux;
+
+            if(jCell != NULL){
+                atomicAdd(&jCell->ctu[j], -uPlus(vUpstream) * uMinus(jCell->v[j]) * flux);                
+            }
+            if(pCell != NULL){
+                atomicAdd(&pCell->ctu[j], -uMinus(vUpstream) * uMinus(pCell->v[j]) * flux);                
+            }            
+        }
+
+	    //High-resolution correction terms
+        double th = 0.0;
+        if (vUpstream > 0){
+            Cell* iiCell = getCell(iCell->iNodes[i], grid);
+            th = (iiCell != NULL)? 
+                (iCell->prob - iiCell->prob)/(cell->prob - iCell->prob):
+                (iCell->prob)/(cell->prob - iCell->prob);
+                
+        } else {
+            Cell* kCell = getCell(cell->kNodes[i], grid);
+            th = (kCell != NULL)?
+                (kCell->prob - cell->prob)/(cell->prob - iCell->prob):
+                (-cell->prob)/(cell->prob - iCell->prob);                             
+        }        
+        atomicAdd(&iCell->ctu[i], fabs(vUpstream)*(gridDef->dx[i]/gridDef->dt - fabs(vUpstream))*flux*fluxLimiter(th));
+    }
+}
+
+/** Update probability for one cell */
+static __device__ void updateProbability(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
+    int usedIndex;
+    Cell* cell;
+    // initialize cells
+    for(int iter=0;iter<iterations;iter++){        
+      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+      cell = getCell(usedIndex, grid); 
+      if(cell != NULL){
+        updateProbabilityCell(cell, grid, gridDefinition);        
+      }
+    }
+}
+
+/** Update probability for one cell */
+static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef){
+    cell->prob += cell->dcu;
+    
+    for(int i=0; i<DIM; i++){
+        Cell* iCell = getCell(cell->iNodes[i], grid);
+        cell->prob -= (iCell != NULL)?
+            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
+            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);
+    }
+    cell->prob = fmax(cell->prob, 0.0);
 }

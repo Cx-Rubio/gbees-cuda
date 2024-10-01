@@ -9,7 +9,7 @@ CC=gcc
 # CUDAFLAGS = -arch=compute_90 # Hopper
 # CUDAFLAGS = -arch=compute_100 # Blackwell
 
-CUDAFLAGS = -arch=compute_60 -lineinfo -O3
+CUDAFLAGS = -arch=compute_61 -lineinfo -O3
 #CUDAFLAGS = -arch=compute_60 -O3
 
 SOURCES = $(wildcard src/*.cu) $(wildcard src/test/*.cu)
