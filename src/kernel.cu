@@ -53,6 +53,196 @@ static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direc
 /** Create new cell in the grid */
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
+
+/** Perform the Godunov scheme on the discretized PDF*/
+static __global__ void godunovMethod(int iterations, Grid* grid, GridDefinition* gridDef);
+
+/** Compute the donor cell upwind value for each grid cell */
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef);
+
+/** Compute the corner transport upwind values in each direction */
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef);
+
+/** Compute flux from the left */
+static __device__ double uPlus(double v);
+
+/** Compute flux from the right */
+static __device__ double uMinus(double v);
+
+/** MC flux limiter */
+static __device__ double fluxLimiter(double th);
+
+	
+/** 
+ * @brief This function performs the Godunov scheme on the discretized PDF, which is 2nd-order accurate
+          and total variation diminishing
+ * 
+ * @param cell the cell object
+ * @param grid the grid object
+ * @param gridDefinition the grid definition
+ */
+static __global__ void godunovMethod(int iterations, Grid* grid, GridDefinition* gridDef)
+{
+    int offsetIndex = threadIdx.x + blockIdx.x * blockDim.x * iterations;     
+    int usedIndex;
+    Cell* cell;
+    // initialize cells
+    for(int iter=0;iter<iterations;iter++){        
+      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+      cell = getCell(usedIndex, grid); 
+      updateDcu(cell, grid, gridDef);
+      updateCtu(cell, grid, gridDef);
+
+    }
+}
+
+
+static __device__ double uPlus(double v){
+  return fmax(v, 0.0);
+}
+
+static __device__ double uMinus(double v){
+  return fmin(v, 0.0);
+}
+
+static __device__ double computeFlux(Cell* cell, Cell* iCell, GridDefinition* G, int i)
+{
+  double F = G->dt*(cell->prob-iCell->prob)/(2*G->dx[i]);
+  return F;
+}
+
+static __device__ double fluxLimiter(double th)
+{
+  double min1 = (1.0 + th)/2.0;
+  min1 = fmin(min1, 2.0);
+  min1 = fmax(min1, 2.0*th);
+  return min1;
+}
+
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef)
+{
+
+  if (cell==NULL){
+    return;
+  }
+  double vUpstream;
+  double vDownstream;
+  
+  cell->dcu = 0;
+  Cell* iCell; Cell* kCell;
+    for(int i = 0; i < DIM; i++){
+        cell->ctu[i] = 0.0;
+        iCell = getCell(cell->iNodes[i], grid);
+        kCell = getCell(cell->kNodes[i], grid);
+
+        double dcu_p = 0;
+        double dcu_m = 0;
+
+	/* Original implementation */
+	//vUpstream = iCell->v[i];
+	//vDownstream = cell->v[i];
+
+	/*Corrected implementation */
+	// Valid only for equispaced meshes
+	vUpstream = 0.5*(iCell->v[i] + cell->v[i]);
+	vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
+	
+	
+        if(kCell != NULL){
+          dcu_p = uPlus(vDownstream) * cell->prob + uMinus(vDownstream) * kCell->prob;
+        }else{
+          dcu_p = uPlus(vDownstream) * cell->prob;
+        }
+        if(iCell != NULL){
+            dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
+        }
+        cell->dcu -= (gridDef->dt/gridDef->dx[i])*(dcu_p-dcu_m);
+    }
+
+}
+
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef)
+{
+  if (cell == NULL)
+    {
+      return;
+    }
+    Cell* iCell;
+    Cell* jCell;
+    Cell* pCell;
+    Cell* iiCell;
+    Cell* kCell;
+    double th;
+    double F;
+    
+    for(int i = 0; i < DIM; i++){
+        iCell = getCell(cell->iNodes[i], grid);
+        //TreeNode* i_node = r->i_nodes[i];
+        //TreeNode* j_node; TreeNode* p_node;
+        if(iCell!=NULL){
+          F = computeFlux(cell, iCell, gridDef, i);
+	/* Original implementation */
+	//vUpstream = iCell->v[i];
+	//vDownstream = cell->v[i];
+
+	/*Corrected implementation */
+	// Valid only for equispaced meshes
+	double vUpstream = 0.5*(iCell->v[i] + cell->v[i]);
+	double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
+
+	  
+    for(int j = 0; j < DIM; j++){
+
+	      double vUpstream_j = 0.5*(iCell->v[j] + cell->v[j]);
+	      double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
+
+	      
+                if (j!=i){
+                  jCell = getCell(cell->iNodes[j], grid);
+                  pCell = getCell(iCell->iNodes[j], grid);
+
+                  cell->ctu[j]      -= uPlus(vUpstream) * uPlus(cell->v[j]) * F;
+                  iCell->ctu[j] -= uMinus(vUpstream) * uMinus(iCell->v[j]) * F;
+
+                  if(jCell!=NULL){
+                        jCell->ctu[j] -= uPlus(vUpstream) * uMinus(jCell->v[j]) * F;
+                    }
+                    if(pCell!=NULL){
+                        pCell->ctu[j] -= uMinus(vUpstream) * uMinus(pCell->v[j]) * F;
+                    }
+                }
+            }
+
+
+	    //High-Resolution Correction Terms
+
+            if (vUpstream>0){
+                iiCell = getCell(iCell->iNodes[i], grid);
+		if(iiCell != NULL){
+                    th = (iCell->prob-iiCell->prob)/(cell->prob-iCell->prob);
+                }
+		else
+		{
+                    th = (iCell->prob)/(cell->prob-iCell->prob);
+                }
+            }else{
+
+	      kCell = getCell(cell->kNodes[i], grid);
+                if(kCell != NULL){
+                    th = (kCell->prob - cell->prob)/(cell->prob - iCell->prob);
+                }else{
+                    th = (-cell->prob)/(cell->prob - iCell->prob);
+                }
+            }
+
+            iCell->ctu[i] += fabs(vUpstream)*(gridDef->dx[i]/gridDef->dt - fabs(vUpstream))*F*fluxLimiter(th);
+    
+            }
+    }
+
+
+}
+	
 /** 
  * @brief Initialization kernel function 
  * 
@@ -397,6 +587,7 @@ static __device__ void normalizeDistribution(int offsetIndex, int iterations, do
         if(cell != NULL) cell->prob /= globalArray[0];        
     }
 }              
+
 
 /** Set the grid definition bounds with the max and min boundary values of the initial grid cells */
 static __device__ void gridBounds(double* output, double* localArray, double* globalArray, double boundaryValue, double(*fn)(double, double) ){
