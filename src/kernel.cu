@@ -157,21 +157,23 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model
             updateIkNodes(offsetIndex, iterations, global.grid);            
             checkCflCondition(offsetIndex, iterations, localArray, &gridDefinition, &global);            
             godunovMethod(offsetIndex, iterations, &gridDefinition, global.grid);
-            //g.sync();
-            /*
-            updateProbability(offsetIndex, iterations, &gridDefinition, global.grid);
+            g.sync();
+            
+            //updateProbability(offsetIndex, iterations, &gridDefinition, global.grid);
             normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
                         
             if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
                 // prune_tree(); TODO implement
                 normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
             }
-            */
+            
             /**
              if ((OUTPUT) && (step_count % OUTPUT_FREQ == 0)) { // print size to terminal
                     printf("Timestep: %d-%d, Program time: %f s, Sim. time: %f", nm, step_count, ((double)(clock()-start))/CLOCKS_PER_SEC, tt + mt + rt); 
                     printf(" TU, Active/Total Cells: %d/%d, Max key %%: %e\n", a_count, tot_count, (double)(max_key)/(pow(2,64)-1)*100); 
                 }*/
+                
+            //if(threadIdx.x == 0 && blockIdx.x == 0){ printf("gridDefinition.dt %f\n", gridDefinition.dt); }
          
             stepCount++;            
             mt += gridDefinition.dt;
@@ -562,6 +564,9 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
  * This function performs the Godunov scheme on the discretized PDF, which is 2nd-order accurate and total variation diminishing
  */
 static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
+    // grid synchronization
+    cg::grid_group g = cg::this_grid(); 
+    
     int usedIndex;
     Cell* cell;
     // initialize cells
@@ -569,10 +574,19 @@ static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefini
       usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
       cell = getCell(usedIndex, grid); 
       if(cell != NULL){
-        updateDcu(cell, grid, gridDefinition);
-        updateCtu(cell, grid, gridDefinition);
+        updateDcu(cell, grid, gridDefinition);        
       }
     }
+    
+    g.sync();
+    
+    for(int iter=0;iter<iterations;iter++){        
+      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+      cell = getCell(usedIndex, grid); 
+      if(cell != NULL){        
+        updateCtu(cell, grid, gridDefinition);
+      }
+    }    
 }
 
 static __device__ double uPlus(double v){
@@ -630,10 +644,7 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
 }
 
 // TODO check if needed to synch between dtu and ctu
-static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {     
-    // grid synchronization
-    cg::grid_group g = cg::this_grid(); 
-    g.sync();
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {         
      
     for(int i=0; i<DIM; i++){
         Cell* iCell = getCell(cell->iNodes[i], grid);
@@ -648,7 +659,7 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
         // Valid only for equispaced meshes
         //double vUpstream = 0.5*(iCell->v[i] + cell->v[i]);
         //double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
-	  
+
         for(int j=0; j<DIM; j++){
             if(j == i) continue;
             
@@ -668,7 +679,7 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
                 atomicAdd(&pCell->ctu[j], -uMinus(vUpstream) * uMinus(pCell->v[j]) * flux);                
             }            
         }
-
+      
 	    //High-resolution correction terms
         double th = 0.0;
         if (vUpstream > 0){

@@ -92,7 +92,8 @@ void registerSignalHandlers(){
 }
 
 /** On ctrl+C */ 
-void signalHandler(int signal){        
+void signalHandler(int signal){ 
+    exit(EXIT_SUCCESS);       
 }
 
 /** Print usage and exit */
@@ -142,7 +143,7 @@ static void executeGbees(bool autotest, int measurementCount, int device){
         gridTest<<<1,1>>>(gridHost);    
     } else {            
         // check if the block count can fit in the GPU
-        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;
+        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;        
         checkCooperativeKernelSize(blocks, threads, gbeesKernel, sharedMemorySize, device);
         
         HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
