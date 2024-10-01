@@ -10,6 +10,7 @@
 typedef struct {
     double* reductionArray; // global array for reduction processes
     Measurement* measurements;
+    Grid* grid;
 } Global;
 
 /** Time step tolerance */
@@ -27,6 +28,6 @@ enum Direction {FORWARD=1, BACKWARD=-1};
  * @param model the model
  * @param measurements the list of measurements
  */
-__global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Grid grid, Model model, Global global);
+__global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model model, Global global);
 
 #endif

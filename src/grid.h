@@ -36,28 +36,31 @@ typedef struct {
 /** --- Device global memory allocations --- */
 
 /**
- * @brief Alloc grid in device global memory
- * requires grid->size be already filled
+ * @brief Alloc grid in device global memory 
  * 
- * @param grid grid pointer with the field size already filled
+ * @param size maximum number of cells
+ * @param grid address of the pointer to the host device struct
+ * @param gridDevice address of the pointer to the grid device struct
  */
-void allocGridDevice(Grid* grid);
+void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice);
 
 /**
  * @brief Free grid in device global memory
  * 
- * @param grid grid pointer
+ * @param grid grid host pointer
+ * @param gridDevice grid device pointer
  */
-void freeGridDevice(Grid* grid);
+void freeGridDevice(Grid* grid, Grid* gridDevice);
 
 /**
  * @brief Initialize hashtable and free list in host and copy to device
  * 
- * @param grid grid pointer
+ * @param grid grid host pointer
+ * @param gridDevice grid device pointer
  * @param gridDefinition grid definition pointer
  * @param firstMeasurement first measurement
  */
-void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measurement* firstMeasurement);
+void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefinition, Measurement* firstMeasurement);
 
 /**
  * @brief Insert a new cell
@@ -66,6 +69,14 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
  * @param grid grid pointer
  */
 __device__ void insertCell(Cell* cell, Grid* grid);  
+
+/**
+ * @brief Insert a new cell (concurrent version) if not exists
+ * 
+ * @param cell new cell pointer
+ * @param grid grid pointer
+ */
+__device__ void insertCellConcurrent(Cell* cell, Grid* grid);
 
  /**
  * @brief Delete a new cell
@@ -76,15 +87,15 @@ __device__ void insertCell(Cell* cell, Grid* grid);
  */
 __device__ void deleteCell(int32_t* state, Grid* grid);
 
- /**
- * @brief Get cell by state position
+/**
+ * @brief Get cell by state indexes
  * Search using the hash-code
  * 
  * @param state state coordinates of the cell to find
  * @param grid grid pointer
- * @return cell pointer or null if the cell is not found
+ * @return used index stored in the hashtable (one more than the real index of the used list array) for the cell or 0 if not exists
  */
-__device__ Cell* findCell(int32_t* state, Grid* grid);
+__device__ uint32_t findCell(int32_t* state, Grid* grid);
 
  /**
  * @brief Get cell by index in the used list

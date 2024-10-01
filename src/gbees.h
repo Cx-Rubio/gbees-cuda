@@ -24,8 +24,8 @@ struct Cell {
     double ctu[DIM];
     int32_t state[DIM];
     double x[DIM];
-    uint32_t iNodes[DIM]; // used list indexes
-    uint32_t kNodes[DIM]; // used list indexes
+    uint32_t iNodes[DIM]; // used list indexes, reserve 0 for no reference
+    uint32_t kNodes[DIM]; // used list indexes, reserve 0 for no reference
     double dcu;
     double cfl_dt;
     int new_f; // TODO check if remove

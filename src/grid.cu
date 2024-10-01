@@ -3,6 +3,10 @@
 #include "grid.h"
 #include "macro.h"
 #include <string.h>
+#include <cooperative_groups.h>
+#include <stdint.h>
+
+namespace cg = cooperative_groups;
 
 /**  Private functions declaration (host) */
 static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t* initialExtent, int32_t* key, uint32_t gridSize, uint32_t* usedSizePtr, int level);
@@ -16,42 +20,48 @@ static __device__ void copyCell(Cell* src, Cell* dst);
 /** --- Device global memory allocations  (host) --- */
 
 /**
- * @brief Alloc grid in device global memory
- * requires grid->size be already filled
+ * @brief Alloc grid in device global memory 
  * 
- * @param grid grid pointer with the field size already filled
+ * @param size maximum number of cells
+ * @param grid address of the pointer to the host device struct
+ * @param gridDevice address of the pointer to the grid device struct
  */
-void allocGridDevice(Grid* grid){    
-    uint32_t size = grid->size;
+void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){            
+    grid->size = size;
     grid->overflow = false;
     grid->usedSize = 0;
-    grid->freeSize = 0;
-    HANDLE_CUDA( cudaMalloc( &grid->table, 2 * size * sizeof(HashTableEntry) ) );
+    grid->freeSize = 0;    
+    HANDLE_CUDA( cudaMalloc( &grid->table, 2 * size * sizeof(HashTableEntry) ) );        
     HANDLE_CUDA( cudaMalloc( &grid->usedList, size * sizeof(UsedListEntry) ) );
     HANDLE_CUDA( cudaMalloc( &grid->freeList, size * sizeof(uint32_t) ) );
     HANDLE_CUDA( cudaMalloc( &grid->heap, size * sizeof(Cell) ) );
+    
+    HANDLE_CUDA( cudaMalloc( gridDevice, sizeof(Grid) ) );    
 }
 
 /**
  * @brief Free grid in device global memory
  * 
- * @param grid grid pointer
+ * @param grid grid host pointer
+ * @param gridDevice grid device pointer
  */
-void freeGridDevice(Grid* grid){
+void freeGridDevice(Grid* grid, Grid* gridDevice){
      HANDLE_CUDA( cudaFree( grid->table) ); 
      HANDLE_CUDA( cudaFree( grid->usedList) ); 
      HANDLE_CUDA( cudaFree( grid->freeList) ); 
      HANDLE_CUDA( cudaFree( grid->heap) ); 
+     HANDLE_CUDA( cudaFree( gridDevice) ); 
 }
 
 /**
  * @brief Initialize hashtable and free list in host and copy to device
  * 
- * @param grid grid pointer
+ * @param grid grid host pointer
+ * @param gridDevice grid device pointer
  * @param gridDefinition grid definition pointer
  * @param firstMeasurement first measurement
  */
-void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measurement* firstMeasurement){
+void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefinition, Measurement* firstMeasurement){
     uint32_t size = grid->size; // size of all the grid space (number of cells)    
     
     // compute initial grid size in each dimension
@@ -115,6 +125,9 @@ void initializeGridDevice(Grid* grid, GridDefinition* gridDefinition, Measuremen
     
     // copy hashtable from host to device
     HANDLE_CUDA( cudaMemcpy( grid->table , hashtableHost, 2 * size * sizeof(HashTableEntry), cudaMemcpyHostToDevice) );
+    
+    // copy Grid root fields
+    HANDLE_CUDA( cudaMemcpy( gridDevice , grid, sizeof(Grid), cudaMemcpyHostToDevice) );   
     
     // free host memory
     free(usedListHost);
@@ -240,6 +253,60 @@ __device__ void insertCell(Cell* cell, Grid* grid){
     }            
 } 
 
+
+/**
+ * @brief Insert a new cell (concurrent version) if not exists
+ * 
+ * @param cell new cell pointer
+ * @param grid grid pointer
+ */
+__device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
+  
+   uint32_t hash = computeHash(cell->state);   
+   uint32_t capacity = 2 * grid->size;   
+  
+    for(uint32_t counter = 0; counter < capacity; counter++){
+        uint32_t hashIndex = (hash + counter) % capacity;
+        
+        // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
+        uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, 0, UINT32_MAX);
+        
+        // return if the existing cell is the same as the new cell
+        if(existingUsedIndex > 0 && existingUsedIndex < UINT32_MAX){
+            uint32_t heapIndex = grid->usedList[existingUsedIndex-1].heapIndex;            
+            if(equalState(grid->heap[heapIndex].state, cell->state)) return; // if already exits, return                
+        }
+                
+        if(!existingUsedIndex){                                    
+            // check and reserve used list location
+            uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);        
+            if(usedIndex >= grid->size){
+                grid->overflow = true;
+                return;
+            }
+    
+            // update hashtable
+            grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell
+            copyKey(cell->state,  grid->table[hashIndex].key); 
+            
+            // reserve use one free slot and obtain it index
+            uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
+            
+            // update used list 
+            grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
+            grid->usedList[usedIndex].hashTableIndex = hashIndex;
+            
+            // update heap content
+            Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
+            copyCell(cell, dstCell);
+                        
+            //printf("new cell [%d, %d, %d]\n",cell->state[0],cell->state[1],cell->state[2]);
+                    
+            return;
+        }
+    }
+} 
+
  /**
  * @brief Delete a new cell
  * If the cell do not exists, do nothing
@@ -276,27 +343,25 @@ __device__ void deleteCell(int32_t* state, Grid* grid){
     }
 }
 
- /**
- * @brief Get cell by state position
+/**
+ * @brief Get cell by state indexes
  * Search using the hash-code
  * 
  * @param state state coordinates of the cell to find
  * @param grid grid pointer
- * @return cell pointer or null if the cell is not found
+ * @return used index stored in the hashtable (one more than the real index of the used list array) for the cell or 0 if not exists
  */
-__device__ Cell* findCell(int32_t* state, Grid* grid){
+__device__ uint32_t findCell(int32_t* state, Grid* grid){
    uint32_t hash = computeHash(state);   
    uint32_t capacity = 2 * grid->size;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
-        if(grid->table[hashIndex].usedIndex && equalState(grid->table[hashIndex].key, state)){ // if not deleted and match state
-            uint32_t usedIndex = grid->table[hashIndex].usedIndex - 1; // 0 is reserved to mark not used cell
-            uint32_t heapIndex = grid->usedList[usedIndex].heapIndex;
-            return grid->heap + heapIndex;
-            }
-    }    
-    return NULL;
+        if(grid->table[hashIndex].usedIndex && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
+            return grid->table[hashIndex].usedIndex; // 0 is reserved to mark not used cell
+        }
+    } 
+    return 0;
 }
 
  /**
@@ -308,7 +373,7 @@ __device__ Cell* findCell(int32_t* state, Grid* grid){
  */
 __device__ Cell* getCell(uint32_t index, Grid* grid){
     if(index < grid->usedSize){
-        uint32_t heapIndex = grid->usedList[index].heapIndex;
+        uint32_t heapIndex = grid->usedList[index].heapIndex;        
         return grid->heap + heapIndex;
     } else {
         return NULL;
