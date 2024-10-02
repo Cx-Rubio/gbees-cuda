@@ -186,12 +186,23 @@ __host__ __device__ void copyKey(int32_t* src, int32_t* dst){
 
 /**  --- Private functions implementation (device) ---  */
 
-/** Compute hash value from the state coordinates */
-static __host__ __device__ uint32_t computeHash(int32_t* state){
-    uint32_t hash = 0;
-    for(int i=0;i<DIM;i++) hash ^= state[i];    
-    return hash;
-} // TODO improve hash computation if needed
+/** Compute hash value from the state coordinates (BuzHash) */
+static __host__ __device__ uint32_t computeHash(int32_t* state){    
+    uint64_t hash = 0;  // Initialize the hash value
+    uint64_t prime = 0x5bd1e995;  // A prime number used in the hash function
+
+    for (int i = 0; i < DIM; ++i) {
+        hash ^= (uint64_t)state[i]; // Combine the current integer with the hash
+        hash *= prime;              // Multiply by a prime number
+        hash ^= hash >> 47;         // Mix the bits
+    }
+
+    // Finalization step
+    hash *= prime;                  // Final multiplication
+    hash ^= hash >> 47;             // Final mixing step
+
+    return hash;                    // Return the first 32 bits of the 64-bit hash value
+}  
 
 /** Check if the state coordinates are equal */
 static __device__ bool equalState(int32_t* state1, int32_t* state2){

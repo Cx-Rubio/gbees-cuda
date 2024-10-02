@@ -9,7 +9,6 @@
 /** Forward declaration*/
 struct Measurement;
 
-
 /** Model device callbacks */
 typedef struct {
   void (*f)(double*, double*, double*); // Dynamics model function ptr
