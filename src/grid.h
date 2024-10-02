@@ -36,6 +36,28 @@ typedef struct {
 /** --- Device global memory allocations --- */
 
 /**
+ * @brief Alloc grid definition in device global memory 
+ * 
+ * @param gridDefinitionDevice address of the pointer to the grid definition device struct
+ */
+void allocGridDefinitionDevice(GridDefinition** gridDefinitionDevice);
+
+/**
+ * @brief Free grid definition in device global memory
+ *  
+ * @param gridDefinitionDevice grid definition device pointer
+ */
+void freeGridDefinition(GridDefinition* gridDefinitionDevice);
+
+/**
+ * @brief Initialize grid definition in device memory
+ * 
+ * @param gridDefinitionHost grid definition host pointer
+ * @param gridDefinitionDevice grid definition device pointer
+ */
+void initializeGridDefinitionDevice(GridDefinition* gridDefinitionHost, GridDefinition* gridDefinitionDevice);
+
+/**
  * @brief Alloc grid in device global memory 
  * 
  * @param size maximum number of cells

@@ -20,6 +20,34 @@ static __device__ void copyCell(Cell* src, Cell* dst);
 /** --- Device global memory allocations  (host) --- */
 
 /**
+ * @brief Alloc grid definition in device global memory 
+ * 
+ * @param gridDefinitionDevice address of the pointer to the grid definition device struct
+ */
+void allocGridDefinitionDevice(GridDefinition** gridDefinitionDevice){
+    HANDLE_CUDA( cudaMalloc(gridDefinitionDevice, sizeof(GridDefinition) ) );   
+}
+
+/**
+ * @brief Free grid definition in device global memory
+ *  
+ * @param gridDefinitionDevice grid definition device pointer
+ */
+void freeGridDefinition(GridDefinition* gridDefinitionDevice){
+    HANDLE_CUDA( cudaFree(gridDefinitionDevice) ); 
+}
+
+/**
+ * @brief Initialize grid definition in device memory
+ * 
+ * @param gridDefinitionHost grid definition host pointer
+ * @param gridDefinitionDevice grid definition device pointer
+ */
+void initializeGridDefinitionDevice(GridDefinition* gridDefinitionHost, GridDefinition* gridDefinitionDevice){
+    HANDLE_CUDA( cudaMemcpy( gridDefinitionDevice , gridDefinitionHost, sizeof(GridDefinition), cudaMemcpyHostToDevice) );
+}
+
+/**
  * @brief Alloc grid in device global memory 
  * 
  * @param size maximum number of cells
@@ -272,48 +300,56 @@ __device__ void insertCell(Cell* cell, Grid* grid){
  * @param grid grid pointer
  */
 __device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
-  
    uint32_t hash = computeHash(cell->state);   
-   uint32_t capacity = 2 * grid->size;   
-  
+   uint32_t capacity = 2 * grid->size;      
+   
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
         
-        // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
-        uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, 0, UINT32_MAX);
+        while(true){ // if the slot is reserved, wait for the other threads until obtain the final usedIndex  
         
-        // return if the existing cell is the same as the new cell
-        if(existingUsedIndex > 0 && existingUsedIndex < UINT32_MAX){
-            uint32_t heapIndex = grid->usedList[existingUsedIndex-1].heapIndex;            
-            if(equalState(grid->heap[heapIndex].state, cell->state)) return; // if already exits, return                
-        }
+            // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
+            uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, 0, UINT32_MAX);    
+        
+            // return if the existing cell is the same as the new cell
+            if(existingUsedIndex > 0 && existingUsedIndex != UINT32_MAX){                
+                if(equalState(grid->table[hashIndex].key, cell->state)) return; // if already exits, return
+                else break; // continue with the next hashtable cell
+            }
+           
+            // create a new cell
+            if(!existingUsedIndex){                                    
+                // check and reserve used list location
+                uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
+
+                if(usedIndex >= grid->size){
+                    grid->overflow = true;
+                    return;
+                }
+        
+                // update hashtable                
+                copyKey(cell->state,  grid->table[hashIndex].key);  
+                // TODO check if needed __threadfence_system(); and atomic in the next assigment
+                grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell                
                 
-        if(!existingUsedIndex){                                    
-            // check and reserve used list location
-            uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);        
-            if(usedIndex >= grid->size){
-                grid->overflow = true;
+                // reserve one free slot and obtain its index
+                uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
+                
+                // update used list 
+                grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
+                grid->usedList[usedIndex].hashTableIndex = hashIndex;
+                
+                // update heap content
+                Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
+                
+                copyCell(cell, dstCell);
+                
+                //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, hashIndex);
+                        
                 return;
             }
-    
-            // update hashtable
-            grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell
-            copyKey(cell->state,  grid->table[hashIndex].key); 
-            
-            // reserve use one free slot and obtain it index
-            uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
-            
-            // update used list 
-            grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
-            grid->usedList[usedIndex].hashTableIndex = hashIndex;
-            
-            // update heap content
-            Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
-            copyCell(cell, dstCell);
-                        
-            //printf("new cell [%d, %d, %d]\n",cell->state[0],cell->state[1],cell->state[2]);
-                    
-            return;
+            //printf("wait for reserved slot\n");
+            // TODO check in needed g.sync() to allow execution of the other blocks when all threads if this block are waiting for reserved hashtable cells
         }
     }
 } 
@@ -384,7 +420,7 @@ __device__ uint32_t findCell(int32_t* state, Grid* grid){
  */
 __device__ Cell* getCell(uint32_t index, Grid* grid){
     if(index < grid->usedSize){
-        uint32_t heapIndex = grid->usedList[index].heapIndex;        
+        uint32_t heapIndex = grid->usedList[index].heapIndex;   
         return grid->heap + heapIndex;
     } else {
         return NULL;

@@ -53,7 +53,6 @@ static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direc
 /** Create new cell in the grid */
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
-
 /** Perform the Godunov scheme on the discretized PDF*/
 static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
@@ -82,12 +81,10 @@ static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinit
  * @brief Initialization kernel function 
  * 
  * @param iterations number of cells that should process the same thread
- * @param gridDefinition the grid definition
- * @param grid the grid object
  * @param model the model
- * @param measurements the list of measurements
+ * @param global global memory data
  */
-__global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model model, Global global){
+__global__ void gbeesKernel(int iterations, Model model, Global global){
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
     
@@ -100,16 +97,16 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
         int usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list                
-        initializeCell(usedIndex, &gridDefinition, &model, &global); // initialize cell
+        initializeCell(usedIndex, global.gridDefinition, &model, &global); // initialize cell
     }    
     
     // set grid maximum and minimum bounds
     if(model.useBounds){ // TODO test use bounds
-        initializeGridBoundary(offsetIndex, iterations, localArray, &gridDefinition, &global);   
+        initializeGridBoundary(offsetIndex, iterations, localArray, global.gridDefinition, &global);   
         
         /* if(offsetIndex == 0){
-            printf("Bounds min %e\n", gridDefinition.lo_bound);
-            printf("Bounds max %e\n", gridDefinition.hi_bound);
+            printf("Bounds min %e\n", global.gridDefinition->lo_bound);
+            printf("Bounds max %e\n", global.gridDefinition->hi_bound);
         } */
     }
     
@@ -153,13 +150,14 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model
         int stepCount = 1; // step count
         
         while(fabs(mt - measurement->T) > TOL) {             
-            growGrid(offsetIndex, iterations, &gridDefinition, global.grid, &model);
+            growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
             updateIkNodes(offsetIndex, iterations, global.grid);            
-            checkCflCondition(offsetIndex, iterations, localArray, &gridDefinition, &global);            
-            godunovMethod(offsetIndex, iterations, &gridDefinition, global.grid);
+            checkCflCondition(offsetIndex, iterations, localArray, global.gridDefinition, &global); 
+            
+            godunovMethod(offsetIndex, iterations, global.gridDefinition, global.grid);
             g.sync();
             
-            //updateProbability(offsetIndex, iterations, &gridDefinition, global.grid);
+            updateProbability(offsetIndex, iterations, global.gridDefinition, global.grid);
             normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
                         
             if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
@@ -176,8 +174,8 @@ __global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model
             //if(threadIdx.x == 0 && blockIdx.x == 0){ printf("gridDefinition.dt %f\n", gridDefinition.dt); }
          
             stepCount++;            
-            mt += gridDefinition.dt;
-            gridDefinition.dt = DBL_MAX;
+            mt += global.gridDefinition->dt;
+            global.gridDefinition->dt = DBL_MAX;
             
             break; // FIXME remove
         }
@@ -307,23 +305,16 @@ static __device__ void updateIkNodes(int offsetIndex, int iterations, Grid* grid
 
 /** Update ik nodes for one cell */
 static __device__ void updateIkNodesCell(Cell* cell, Grid* grid){
-    int32_t state[DIM];
-    uint32_t usedIndex;
+    int32_t state[DIM];    
     for(int dim=0; dim<DIM; dim++){
         // node i
         copyKey(cell->state, state);
         state[dim] -= 1;
-        usedIndex = findCell(state, grid);
-        if(usedIndex){
-            cell->iNodes[dim] = usedIndex;
-        }
+        cell->iNodes[dim] = findCell(state, grid);        
             
         // node k        
         state[dim] += 2; // to reach +1
-        usedIndex = findCell(state, grid);
-        if(usedIndex){
-            cell->iNodes[dim] = usedIndex;
-        }
+        cell->kNodes[dim] = findCell(state, grid);        
     }
 }
 
@@ -361,8 +352,8 @@ static __device__ void checkCflCondition(int offsetIndex, int iterations, double
         uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
         Cell* cell = getCell(usedIndex, global->grid);        
         if(cell != NULL && cell->cfl_dt < minDt) minDt = cell->cfl_dt;
-    }
-    gridBounds(&gridDefinition->dt, localArray, global->reductionArray, minDt, fmin);
+    }    
+    gridBounds(&gridDefinition->dt, localArray, global->reductionArray, minDt, fmin);    
 }
 
 /** Normalize probability distribution */
@@ -465,7 +456,7 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
         g.sync();
     } 
     if(blockIdx.x == 0 && threadIdx.x == 0){
-        *output = globalArray[0];
+        *output = globalArray[0];        
     }
     g.sync();    
 }
@@ -518,7 +509,7 @@ static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direc
         state[dimension] += direction;
         createCell(state, gridDefinition, grid, model);
     }
-    
+        
     // check edges
     for (int j = 0; j < DIM; j++){
         if(j != dimension){
@@ -533,10 +524,10 @@ static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direc
                 copyKey(cell->state, state);
                 state[dimension] += direction;
                 state[j] -=1;
-                //createCell(state, gridDefinition, grid, model);
+                createCell(state, gridDefinition, grid, model);
             }
         }
-    }        
+    }   
 }
 
 /** Create new cell in the grid */
@@ -545,15 +536,16 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
     
     // compute state
     for(int i=0;i<DIM;i++){
-        cell.state[i] = state[i]; // state coordinates
+        cell.state[i] = state[i];
         cell.x[i] = gridDefinition->dx[i] * state[i] + gridDefinition->center[i]; // state value
+        cell.ctu[i] = 0.0;
     }
         
     cell.prob = 0.0; 
     cell.new_f = 0;
     cell.ik_f = 0;
+    cell.dcu = 0.0;
     initializeAdv(gridDefinition, model, &cell);
-    // TODO initialize ctu[] y dcu
     
     // insert cell
     insertCellConcurrent(&cell, grid);
@@ -614,11 +606,11 @@ static __device__ double fluxLimiter(double th) {
 }
 
 static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef) {    
-    cell->dcu = 0;   
+    cell->dcu = 0.0;   
     for(int i=0; i<DIM; i++){
         cell->ctu[i] = 0.0;
-        Cell* iCell = getCell(cell->iNodes[i], grid);
-        Cell* kCell = getCell(cell->kNodes[i], grid);
+        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
+        Cell* kCell = getCell(cell->kNodes[i]-1, grid);
 
         double dcu_p = 0;
         double dcu_m = 0;
@@ -634,20 +626,29 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
         }else{
           dcu_p = uPlus(vDownstream) * cell->prob;
         }
+        double vUpstream = 0.0; // TODO put inside the if
         if(iCell != NULL){
-            double vUpstream = iCell->v[i]; // original implementation
+            vUpstream = iCell->v[i]; // original implementation
             // double vUpstream = 0.5*(iCell->v[i] + cell->v[i]); // corrected implementation (valid only for equispaced meshes)
             dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
         }
         cell->dcu -= (gridDef->dt/gridDef->dx[i])*(dcu_p-dcu_m);
+        
+        /*
+        if(cell->state[0] == 0 && cell->state[1] == 0 && cell->state[2] == -1 && i == 2){
+            printf("cell->ctu[%d] %f, dcu %f\n", i, cell->ctu[i], cell->dcu);
+            printf("G.dt %f, G.dx[%d]: %f, dcu_p %f, dcu_m %f \n", gridDef->dt, i, gridDef->dx[i], dcu_p, dcu_m);
+            printf("uPlus(vUpstream): %f, iCell->prob: %f, uMinus(vUpstream): %f, cell->prob: %f \n", uPlus(vUpstream), iCell->prob, uMinus(vUpstream), cell->prob);
+            printf("iCell key %d,%d,%d\n", iCell->state[0], iCell->state[1], iCell->state[2]);
+            }
+             */
     }
 }
 
-// TODO check if needed to synch between dtu and ctu
 static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {         
      
     for(int i=0; i<DIM; i++){
-        Cell* iCell = getCell(cell->iNodes[i], grid);
+        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
         if(iCell == NULL) continue;    
         double flux = computeFlux(cell, iCell, gridDef, i);
         
@@ -666,8 +667,8 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
             //double vUpstream_j = 0.5*(iCell->v[j] + cell->v[j]);
             //double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);
 
-            Cell* jCell = getCell(cell->iNodes[j], grid);
-            Cell* pCell = getCell(iCell->iNodes[j], grid);
+            Cell* jCell = getCell(cell->iNodes[j]-1, grid);
+            Cell* pCell = getCell(iCell->iNodes[j]-1, grid);
 
             cell->ctu[j]  -= uPlus(vUpstream) * uPlus(cell->v[j]) * flux;
             iCell->ctu[j] -= uMinus(vUpstream) * uMinus(iCell->v[j]) * flux;
@@ -683,7 +684,7 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
 	    //High-resolution correction terms
         double th = 0.0;
         if (vUpstream > 0){
-            Cell* iiCell = getCell(iCell->iNodes[i], grid);
+            Cell* iiCell = getCell(iCell->iNodes[i]-1, grid);
             th = (iiCell != NULL)? 
                 (iCell->prob - iiCell->prob)/(cell->prob - iCell->prob):
                 (iCell->prob)/(cell->prob - iCell->prob);
@@ -715,12 +716,13 @@ static __device__ void updateProbability(int offsetIndex, int iterations, GridDe
 /** Update probability for one cell */
 static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef){
     cell->prob += cell->dcu;
-    
+        
     for(int i=0; i<DIM; i++){
-        Cell* iCell = getCell(cell->iNodes[i], grid);
+        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
         cell->prob -= (iCell != NULL)?
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);
-    }
+    }    
+    
     cell->prob = fmax(cell->prob, 0.0);
 }
