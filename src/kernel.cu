@@ -150,7 +150,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         int stepCount = 1; // step count
         
         while(fabs(mt - measurement->T) > TOL) {  
-            if(threadIdx.x == 0 && blockIdx.x == 0){ printf("start step step %d\n", stepCount); }
+            if(threadIdx.x == 0 && blockIdx.x == 0){ printf("start step %d\n", stepCount); }
            
             growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
             updateIkNodes(offsetIndex, iterations, global.grid);            
@@ -412,7 +412,7 @@ static __device__ void normalizeDistribution(int offsetIndex, int iterations, do
     
     // at the end, the sum of the probability its at globalArray[0]    
     if(threadIdx.x == 0 && blockIdx.x == 0){
-            printf("prob sum %e\n", globalArray[0]);
+            printf("prob sum %1.14e\n", globalArray[0]);
     }
     
     // update the probability of the cells
@@ -563,27 +563,27 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
  */
 static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
     // grid synchronization
-    cg::grid_group g = cg::this_grid();         
+    cg::grid_group g = cg::this_grid();    
      
     int usedIndex;
     Cell* cell;
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
-      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
-      cell = getCell(usedIndex, grid); 
-      if(cell != NULL){
-        updateDcu(cell, grid, gridDefinition);        
-      }
+        usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+        cell = getCell(usedIndex, grid); 
+        if(cell != NULL){
+            updateDcu(cell, grid, gridDefinition);        
+        }
     }
     
     g.sync();    
     
     for(int iter=0;iter<iterations;iter++){        
-      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
-      cell = getCell(usedIndex, grid); 
-      if(cell != NULL){        
-        updateCtu(cell, grid, gridDefinition);
-      }
+        usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+        cell = getCell(usedIndex, grid); 
+        if(cell != NULL){        
+            updateCtu(cell, grid, gridDefinition);
+        }
     }    
 }
 
@@ -713,12 +713,18 @@ static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinit
         Cell* iCell = getCell(cell->iNodes[i]-1, grid);
         cell->prob -= (iCell != NULL)?
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
-            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);                    
+            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);  
+
+        /*if(cell->state[0] == 2 && cell->state[1] == 1 && cell->state[2] == 7){
+            printf("iCell %p, %d,%d,%d\n", iCell, iCell->state[0], iCell->state[1], iCell->state[2]);
+            //printf("dt %1.16f, dx %1.16f, ctu %1.16f, ictu %1.16f, dcu %1.16f, idcu %1.16f, i %d\n", gridDef->dt, gridDef->dx[i], cell->ctu[i], iCell->ctu[i], cell->dcu, iCell->dcu, i);
+        } */                 
     }    
     
     cell->prob = fmax(cell->prob, 0.0);
     
-    //if(cell->state[0] == 2 && cell->state[1] == -1 && cell->state[2] == -1){
-    //    printf("cell {%d,%d,%d}, prob: %1.16e\n", cell->state[0], cell->state[1], cell->state[2], cell->prob);
-    //}
+   /* if(cell->state[0] == 2 && cell->state[1] == 1 && cell->state[2] == 7){
+        printf("cell {%d,%d,%d}, prob: %1.16e\n", cell->state[0], cell->state[1], cell->state[2], cell->prob);
+    }*/
+    //    printf("%1.16e\n", cell->prob);
 }
