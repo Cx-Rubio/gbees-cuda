@@ -1,5 +1,6 @@
 // Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 #include "config.h"
+#include "util.h"
 #include "kernel.h"
 #include <stdio.h>
 #include <cooperative_groups.h>
@@ -141,7 +142,12 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     }*/
     
     // for each measurement
+    double tt = 0;
     for(int nm=0;nm<model.numMeasurements;nm++){
+                
+        LOG("Timestep: %d-0, Sim. time: %f", nm, tt);
+        LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);        
+        
         // select active measurement
         Measurement* measurement = &global.measurements[nm];
         
@@ -150,7 +156,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         int stepCount = 1; // step count
         
         while(fabs(mt - measurement->T) > TOL) {  
-            if(threadIdx.x == 0 && blockIdx.x == 0){ printf("start step %d\n", stepCount); }
+            LOG("start step %d\n", stepCount);
            
             growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
             updateIkNodes(offsetIndex, iterations, global.grid);            
@@ -162,7 +168,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             updateProbability(offsetIndex, iterations, global.gridDefinition, global.grid);
             normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
             
-            if(threadIdx.x == 0 && blockIdx.x == 0){ printf("step duration %f, active cells %d, time %f\n", global.gridDefinition->dt, global.grid->usedSize, mt); }
+            LOG("step duration %f, active cells %d, time %f\n", global.gridDefinition->dt, global.grid->usedSize, mt);
                         
             if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
                 if(threadIdx.x == 0 && blockIdx.x == 0){ printf("prune tree at step %d\n", stepCount); }
@@ -411,9 +417,7 @@ static __device__ void normalizeDistribution(int offsetIndex, int iterations, do
         }*/
     
     // at the end, the sum of the probability its at globalArray[0]    
-    if(threadIdx.x == 0 && blockIdx.x == 0){
-            printf("prob sum %1.14e\n", globalArray[0]);
-    }
+   LOG("prob sum %1.14e\n", globalArray[0]); // TODO remove    
     
     // update the probability of the cells
     for(int iter=0;iter<iterations;iter++){

@@ -2,6 +2,7 @@
 
 #include "grid.h"
 #include "macro.h"
+#include "util.h"
 #include <string.h>
 #include <cooperative_groups.h>
 #include <stdint.h>
@@ -110,10 +111,10 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
     
     assertPositiveOrZero(freeCells, GRID_ERROR, "Not enough cells for grid initialization, size %d, required %d", size, usedCells);
     
-    printf("\n -- Initialization --\n");
-    printf("Max cells %d\n", size);
-    printf("Used cells %d\n", usedCells);
-    printf("Free cells %d\n", freeCells);
+    log("\n -- Initialization --\n");
+    log("Max cells %d\n", size);
+    log("Used cells %d\n", usedCells);
+    log("Free cells %d\n", freeCells);
     
     // set free list size    
     grid->freeSize = freeCells;
