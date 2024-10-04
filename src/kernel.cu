@@ -137,6 +137,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             while(rt < recordTime) { // time between PDF recordings           
                 growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
                 updateIkNodes(offsetIndex, iterations, global.grid);            
+return;
                 checkCflCondition(offsetIndex, iterations, localArray, global.gridDefinition, &global);             
                 rt += global.gridDefinition->dt;
                 godunovMethod(offsetIndex, iterations, global.gridDefinition, global.grid);
@@ -301,15 +302,18 @@ static __device__ void updateIkNodes(int offsetIndex, int iterations, Grid* grid
 /** Update ik nodes for one cell */
 static __device__ void updateIkNodesCell(Cell* cell, Grid* grid){
     int32_t state[DIM];    
+    copyKey(cell->state, state);
+    
     for(int dim=0; dim<DIM; dim++){
-        // node i
-        copyKey(cell->state, state);
-        state[dim] -= 1;
+        // node i        
+        state[dim] -= 1; // to reach -1
         cell->iNodes[dim] = findCell(state, grid);        
             
         // node k        
         state[dim] += 2; // to reach +1
         cell->kNodes[dim] = findCell(state, grid);        
+        
+        state[dim] -= 1; // to return to original
     }
 }
 
