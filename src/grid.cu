@@ -190,7 +190,8 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
             uint32_t usedIndex = *usedSizePtr;
             
             // update hashtable
-            hashtable[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell                        
+            hashtable[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell   
+            hashtable[hashIndex].hashIndex = hashIndex;
             copyKey(key,  hashtable[hashIndex].key); 
             
             // update used list 
@@ -275,6 +276,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
             
             // update hashtable
             grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell
+            grid->table[hashIndex].hashIndex = hashIndex;
             copyKey(cell->state,  grid->table[hashIndex].key); 
             
             // update used list 
@@ -329,7 +331,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
     
             // update hashtable                
             copyKey(cell->state,  grid->table[hashIndex].key);  
-            // TODO check if needed __threadfence_system(); and atomic in the next assigment
+            grid->table[hashIndex].hashIndex = hashIndex;            
             grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell                
             
             // reserve one free slot and obtain its index
@@ -404,6 +406,7 @@ __device__ uint32_t findCell(int32_t* state, Grid* grid){
         if(grid->table[hashIndex].usedIndex && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
             return grid->table[hashIndex].usedIndex; // 0 is reserved to mark not used cell
         }
+        if(grid->table[hashIndex].usedIndex == 0) break;
     } 
     return 0;
 }

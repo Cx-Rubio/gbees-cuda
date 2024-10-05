@@ -12,6 +12,7 @@
 typedef struct {
     int32_t  key[DIM];
     uint32_t  usedIndex;    
+    uint32_t  hashIndex;    
     } HashTableEntry;
 
 /** Used list entry */

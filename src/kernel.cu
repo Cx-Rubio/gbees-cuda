@@ -137,7 +137,6 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             while(rt < recordTime) { // time between PDF recordings           
                 growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
                 updateIkNodes(offsetIndex, iterations, global.grid);            
-return;
                 checkCflCondition(offsetIndex, iterations, localArray, global.gridDefinition, &global);             
                 rt += global.gridDefinition->dt;
                 godunovMethod(offsetIndex, iterations, global.gridDefinition, global.grid);
@@ -174,6 +173,8 @@ return;
                 LOG("Record PDF (not implemented)\n");
             }
             mt += rt;
+            
+            break;
         }
         tt += mt;
         // perform Bayesian update for the next measurement
