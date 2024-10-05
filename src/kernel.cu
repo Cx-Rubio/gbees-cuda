@@ -46,10 +46,13 @@ static __device__ void checkCflCondition(int offsetIndex, int iterations, double
 static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Grow grid from one cell */
-static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model, int* synchCount, cg::grid_group g);
+static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Grow grid from one cell in one dimension and direction */
-static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model, int* synchCount, cg::grid_group g);
+static __device__ void growGridDireccional(Cell* cell, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model);
+
+/** Grow grid from one cell in one dimension and direction */
+static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum Direction directionJ, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Create new cell in the grid */
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
@@ -134,7 +137,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         while(fabs(mt - measurement->T) > TOL) {              
             rt = 0.0;
            
-            while(rt < recordTime) { // time between PDF recordings           
+            while(rt < recordTime) { // time between PDF recordings      
+                g.sync();        
                 growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
                 updateIkNodes(offsetIndex, iterations, global.grid);            
                 checkCflCondition(offsetIndex, iterations, localArray, global.gridDefinition, &global);             
@@ -144,7 +148,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 updateProbability(offsetIndex, iterations, global.gridDefinition, global.grid);
                 normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
-                        
+
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
                     LOG("prune tree at step %d\n", stepCount); 
                     // prune_tree(); TODO implement
@@ -459,110 +463,118 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
 }
 
 /** Grow grid */
-static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){
-    // grid synchronization
-    cg::grid_group g = cg::this_grid(); 
-    int synchCount = 0;
+static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){                
     
-    uint32_t usedSize = grid->usedSize;
-        
-    g.sync();    
-        
     for(int iter=0;iter<iterations;iter++){ 
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list  
-        
-        if(usedIndex < usedSize){             
-            Cell* cell = getCell(usedIndex, grid);
-            if(cell->prob >= gridDefinition->threshold){
-                growGridFromCell(cell, gridDefinition, grid, model, &synchCount, g);
-            }
-        }    
-    }      
-
-    int maxSync = iterations *4;
-    //printf(" synchCount %d\n", synchCount);
-    for(; synchCount<maxSync;synchCount++){
-        g.sync();
-    }
-    
-    g.sync(); 
+        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list              
+        Cell* cell = getCell(usedIndex, grid);        
+        growGridFromCell(cell, gridDefinition, grid, model);        
+    }                
 }
 
 /** Grow grid from one cell */
-static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model, int* synchCount, cg::grid_group g){
+static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model){
     // grid synchronization
-    //cg::grid_group g = cg::this_grid(); 
+    cg::grid_group g = cg::this_grid(); 
     
-    for(int dimension=0;dimension<DIM;dimension++){
-        if(cell->v[dimension] > 0.0){
-            growGridDireccional(cell, dimension, FORWARD, gridDefinition, grid, model, synchCount, g);        
-        } 
+    bool performGrow = cell != NULL && cell->prob >= gridDefinition->threshold;
+    
+    if(performGrow) {          
+        growGridDireccional(cell,  FORWARD, gridDefinition, grid, model);                
+    }    
+    
+    g.sync(); // synchronization needed to avoid create duplicated cells
+    
+    if(performGrow) {          
+        growGridDireccional(cell,  BACKWARD, gridDefinition, grid, model);                
+    }     
+    
+    g.sync(); // synchronization needed to avoid create duplicated cells
+    
+    if(performGrow) {         
+        growGridEdges(cell,  FORWARD, FORWARD, gridDefinition, grid, model);    
+            
+    } 
+    
+    g.sync(); // synchronization needed to avoid create duplicated cells
+    
+    if(performGrow) { 
+        growGridEdges(cell, FORWARD, BACKWARD, gridDefinition, grid, model);    
     }
     
-    // synchronization to avoid concurrent creation of the same cell
-    //*synchCount +=1;
-    //g.sync();
+    g.sync(); // synchronization needed to avoid create duplicated cells
+    
+    if(performGrow) { 
+        growGridEdges(cell, BACKWARD, FORWARD, gridDefinition, grid, model);         
+    } 
+    
+    g.sync(); // synchronization needed to avoid create duplicated cells
+    
+    if(performGrow) { 
+        growGridEdges(cell, BACKWARD, BACKWARD, gridDefinition, grid, model);        
+    } 
+    
+}
+
+/** Grow grid from one cell in one dimension and direction */
+static __device__ void growGridDireccional(Cell* cell, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model){
+        
+    uint32_t nextFaceIndex = 0; // initialized to null reference
+    int32_t state[DIM]; // state indexes for the new cells    
     
     for(int dimension=0;dimension<DIM;dimension++){
-        if(cell->v[dimension] < 0.0){
-            growGridDireccional(cell, dimension, BACKWARD, gridDefinition, grid, model, synchCount, g);    
+        if(direction == FORWARD) {
+            if(cell->v[dimension] <= 0.0) continue; 
+            nextFaceIndex = cell->kNodes[dimension];
+        } else {
+            if(cell->v[dimension] >= 0.0) continue; 
+            nextFaceIndex = cell->iNodes[dimension]; 
+        }
+    
+        // create next face if not exists
+        if(!nextFaceIndex){
+            // create new cell key[dimension] = cell->key[dimension]+direction
+            copyKey(cell->state, state);
+            state[dimension] += direction;
+            createCell(state, gridDefinition, grid, model);
         }
     }    
 }
 
 /** Grow grid from one cell in one dimension and direction */
-static __device__ void growGridDireccional(Cell* cell, int dimension, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model, int* synchCount, cg::grid_group g){
-    // grid synchronization
-    //cg::grid_group g = cg::this_grid(); 
-    
-    // check if already exists next face
-    uint32_t nextFaceIndex = 0; // initialized to null reference
-    int32_t state[DIM]; // state indexes for the new cells
-    if(direction == FORWARD) nextFaceIndex = cell->kNodes[dimension];
-    else nextFaceIndex = cell->iNodes[dimension];
-    
-    // create next face if not exists
-    if(!nextFaceIndex){
-        // create new cell key[dimension] = cell->key[dimension]+direction
-        copyKey(cell->state, state);
-        state[dimension] += direction;
-        createCell(state, gridDefinition, grid, model);
-    }
+static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum Direction directionJ, GridDefinition* gridDefinition, Grid* grid, Model* model){
         
-    // check edges
-    for (int j = 0; j < DIM; j++){
-        if(j != dimension){
-            if(cell->v[j] > 0.0){
-                // create new cell key[dimension] = cell->key[dimension] = key[dimension]+direction & cell->key[j] = cell->key[j]+1
-                copyKey(cell->state, state);
-                state[dimension] += direction;
-                state[j] +=1;
-                createCell(state, gridDefinition, grid, model);
-            } 
+    int32_t state[DIM]; // state indexes for the new cells
+    
+    for(int dimension=0;dimension<DIM;dimension++){
+        if(direction == FORWARD) {
+            if(cell->v[dimension] <= 0.0) continue;             
+        } else {
+            if(cell->v[dimension] >= 0.0) continue;             
         }
-    }   
-    
-    // synchronization to avoid concurrent creation of the same cell
-    //*synchCount +=1;
-    //g.sync();
-    
-    // check edges
-    for (int j = 0; j < DIM; j++){
-        if(j != dimension){
-            if(cell->v[j] < 0.0){
-                // create new cell key[dimension] = cell->key[dimension] = key[dimension]+direction & cell->key[j] = cell->key[j]-1
-                copyKey(cell->state, state);
-                state[dimension] += direction;
-                state[j] -=1;
-                createCell(state, gridDefinition, grid, model);
+        
+        // check edges
+        for (int j = 0; j < DIM; j++){
+            if(j != dimension){
+                if( (directionJ == FORWARD && cell->v[j] > 0.0) || (directionJ == BACKWARD && cell->v[j] < 0.0) )  {                
+                    copyKey(cell->state, state);
+                    state[dimension] += direction;
+                    state[j] += directionJ;
+                    createCell(state, gridDefinition, grid, model);
+                } 
             }
-        }
-    }   
+        }   
+    }        
 }
 
-/** Create new cell in the grid */
+
+/** Create new cell in the grid if not exists
+ *  checks existence only with previous cells, not with other concurrent create cells
+ */
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model){
     Cell cell;
+    
+    // TODO optional performane improvement, move initialization to insertCellConcurrent and execute only if cell not exits
     
     // compute state
     for(int i=0;i<DIM;i++){

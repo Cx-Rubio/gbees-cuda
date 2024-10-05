@@ -299,7 +299,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
 
 /**
  * @brief Insert a new cell (concurrent version) if not exists
- * all check existence with previous cell, not with concurrent new cells
+ * checks existence only with previous cells, not with other concurrent inserts
  * 
  * @param cell new cell pointer
  * @param grid grid pointer
@@ -327,7 +327,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
             if(usedIndex >= grid->size){
                 grid->overflow = true;
                 //return;
-                __trap();
+                __trap(); // TODO manage overflow
             }
     
             // update hashtable                
