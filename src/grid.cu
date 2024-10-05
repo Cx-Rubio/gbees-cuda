@@ -1,6 +1,7 @@
 // Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
 #include "grid.h"
+#include "config.h"
 #include "macro.h"
 #include "util.h"
 #include <string.h>
@@ -60,7 +61,7 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){
     grid->overflow = false;
     grid->usedSize = 0;
     grid->freeSize = 0;    
-    HANDLE_CUDA( cudaMalloc( &grid->table, 2 * size * sizeof(HashTableEntry) ) );        
+    HANDLE_CUDA( cudaMalloc( &grid->table, HASH_TABLE_RATIO * size * sizeof(HashTableEntry) ) );        
     HANDLE_CUDA( cudaMalloc( &grid->usedList, size * sizeof(UsedListEntry) ) );
     HANDLE_CUDA( cudaMalloc( &grid->freeList, size * sizeof(uint32_t) ) );
     HANDLE_CUDA( cudaMalloc( &grid->heap, size * sizeof(Cell) ) );
@@ -135,11 +136,11 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
     assertNotNull(usedListHost, MALLOC_ERROR, "Error allocating host memory for used list initialization");
     
     // allocate hashtable in host
-    HashTableEntry* hashtableHost = (HashTableEntry*)malloc(2 * size * sizeof(HashTableEntry));
+    HashTableEntry* hashtableHost = (HashTableEntry*)malloc(HASH_TABLE_RATIO * size * sizeof(HashTableEntry));
     assertNotNull(hashtableHost, MALLOC_ERROR, "Error allocating host memory for hashtable initialization");
     
     // clean hashtable memory
-    memset(hashtableHost, 0, 2 * size * sizeof(HashTableEntry));
+    memset(hashtableHost, 0, HASH_TABLE_RATIO * size * sizeof(HashTableEntry));
     
     // recursive initialization of the hashtable and used list 
     int32_t key[DIM];
@@ -153,7 +154,7 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
     HANDLE_CUDA( cudaMemcpy( grid->usedList , usedListHost, size * sizeof(UsedListEntry), cudaMemcpyHostToDevice) );
     
     // copy hashtable from host to device
-    HANDLE_CUDA( cudaMemcpy( grid->table , hashtableHost, 2 * size * sizeof(HashTableEntry), cudaMemcpyHostToDevice) );
+    HANDLE_CUDA( cudaMemcpy( grid->table , hashtableHost, HASH_TABLE_RATIO * size * sizeof(HashTableEntry), cudaMemcpyHostToDevice) );
     
     // copy Grid root fields
     HANDLE_CUDA( cudaMemcpy( gridDevice , grid, sizeof(Grid), cudaMemcpyHostToDevice) );   
@@ -182,7 +183,7 @@ static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedLi
 /** Insert a new key in the hashtable and update the used list (only for initialization) */
 static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t gridSize, uint32_t* usedSizePtr){
    uint32_t hash = computeHash(key);   
-   uint32_t capacity = 2 * gridSize;
+   uint32_t capacity = HASH_TABLE_RATIO * gridSize;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
@@ -267,7 +268,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
     }
     
    uint32_t hash = computeHash(cell->state);   
-   uint32_t capacity = 2 * grid->size;
+   uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
@@ -305,7 +306,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
  */
 __device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
    uint32_t hash = computeHash(cell->state);   
-   uint32_t capacity = 2 * grid->size;      
+   uint32_t capacity = HASH_TABLE_RATIO * grid->size;      
    
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;                
@@ -362,7 +363,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
  */
 __device__ void deleteCell(int32_t* state, Grid* grid){
    uint32_t hash = computeHash(state);   
-   uint32_t capacity = 2 * grid->size;
+   uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
@@ -399,7 +400,7 @@ __device__ void deleteCell(int32_t* state, Grid* grid){
  */
 __device__ uint32_t findCell(int32_t* state, Grid* grid){
    uint32_t hash = computeHash(state);   
-   uint32_t capacity = 2 * grid->size;
+   uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;

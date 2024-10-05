@@ -143,7 +143,6 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 g.sync();            
                 updateProbability(offsetIndex, iterations, global.gridDefinition, global.grid);
                 normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
-                            
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
                         
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
