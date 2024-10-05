@@ -82,20 +82,24 @@ static __device__ void updateProbability(int offset, int iterations, GridDefinit
 static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef);
 
 /** Get offset index to iterate cells */
-static __device__ int getOffset(int iterations);
+static __device__ int getOffset();
 
 /** Get index to iterate cells */
 static __device__ uint32_t getIndex(int offset, int iteration);
 	
     
 /** Get offset index to iterate cells */
-static __device__ int getOffset(int iterations){    
-    return threadIdx.x + blockIdx.x * blockDim.x * iterations;
+static __device__ int getOffset(){    
+    //return threadIdx.x + blockIdx.x * blockDim.x * CELLS_PER_THREAD;
+    return threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
+    //return blockIdx.x + threadIdx.x * BLOCKS;
 }
 
 /** Get used index to iterate cells */
 static __device__ uint32_t getIndex(int offset, int iteration){    
-    return (uint32_t)(offset + iteration * blockDim.x);
+    //return (uint32_t)(offset + iteration * blockDim.x);
+    return (uint32_t)(offset + iteration * THREADS_PER_BLOCK * BLOCKS);
+    //return (uint32_t)(offset + iteration * THREADS_PER_BLOCK * BLOCKS);
 }
 /** 
  * @brief Initialization kernel function 
@@ -112,11 +116,11 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     __shared__ double localArray[THREADS_PER_BLOCK];   
     
     // get used list offset index
-    int offset = getOffset(iterations);     
+    int offset = getOffset();     
         
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
-        int usedIndex = getIndex(offset, iter); // index in the used list                
+        int usedIndex = getIndex(offset, iter); // index in the used list               
         initializeCell(usedIndex, global.gridDefinition, &model, &global); // initialize cell
     }    
     
@@ -164,7 +168,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 updateProbability(offset, iterations, global.gridDefinition, global.grid);
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
-
+return;
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
                     LOG("prune tree at step %d\n", stepCount); 
                     // prune_tree(); TODO implement
@@ -482,7 +486,7 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
 static __device__ void growGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){                
     
     for(int iter=0;iter<iterations;iter++){ 
-        uint32_t usedIndex = getIndex(offset, iter); // index in the used list              
+        uint32_t usedIndex = getIndex(offset, iter); // index in the used list            
         Cell* cell = getCell(usedIndex, grid);        
         growGridFromCell(cell, gridDefinition, grid, model);        
     }                
@@ -492,7 +496,7 @@ static __device__ void growGrid(int offset, int iterations, GridDefinition* grid
 static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model){
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
-    
+        
     bool performGrow = cell != NULL && cell->prob >= gridDefinition->threshold;
     
     if(performGrow) {          
@@ -536,7 +540,7 @@ static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefiniti
 static __device__ void growGridDireccional(Cell* cell, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model){
         
     uint32_t nextFaceIndex = 0; // initialized to null reference
-    int32_t state[DIM]; // state indexes for the new cells    
+    int32_t state[DIM]; // state indexes for the new cells            
     
     for(int dimension=0;dimension<DIM;dimension++){
         if(direction == FORWARD) {

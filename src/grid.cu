@@ -306,8 +306,8 @@ __device__ void insertCell(Cell* cell, Grid* grid){
  */
 __device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
    uint32_t hash = computeHash(cell->state);   
-   uint32_t capacity = HASH_TABLE_RATIO * grid->size;      
-   
+   uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
+
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;                
  
