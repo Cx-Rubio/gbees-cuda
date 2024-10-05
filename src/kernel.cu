@@ -22,7 +22,7 @@ static __device__ void initializeAdv(GridDefinition* gridDefinition, Model* mode
 static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIndex);
 
 /** Update ik nodes */
-static __device__ void updateIkNodes(int offsetIndex, int iterations, Grid* grid);
+static __device__ void updateIkNodes(int offset, int iterations, Grid* grid);
 
 /** Update ik nodes for one cell */
 static __device__ void updateIkNodesCell(Cell* cell, Grid* grid);
@@ -31,19 +31,19 @@ static __device__ void updateIkNodesCell(Cell* cell, Grid* grid);
 static __device__ void initializeBoundary(Cell* cell, Model* model);
 
 /** Initialize Grid boundary */
-static __device__ void initializeGridBoundary(int offsetIndex, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global);
+static __device__ void initializeGridBoundary(int offset, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global);
 
 /** Normalize probability distribution */
-static __device__ void normalizeDistribution(int offsetIndex, int iterations, double* localArray, double* globalArray, Grid* grid);
+static __device__ void normalizeDistribution(int offset, int iterations, double* localArray, double* globalArray, Grid* grid);
 
 /** Compute grid bounds */
 static __device__ void gridBounds(double* output, double* localArray, double* globalArray, double boundaryValue, double(*fn)(double, double) );
 
 /** Compute step dt */
-static __device__ void checkCflCondition(int offsetIndex, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global);
+static __device__ void checkCflCondition(int offset, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global);
 
 /** Grow grid */
-static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model);
+static __device__ void growGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Grow grid from one cell */
 static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model);
@@ -58,7 +58,7 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Perform the Godunov scheme on the discretized PDF*/
-static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid);
+static __device__ void godunovMethod(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Compute the donor cell upwind value for each grid cell */
 static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef);
@@ -76,11 +76,27 @@ static __device__ double uMinus(double v);
 static __device__ double fluxLimiter(double th);
 
 /** Update probability */
-static __device__ void updateProbability(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid);
+static __device__ void updateProbability(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Update probability for one cell */
 static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef);
+
+/** Get offset index to iterate cells */
+static __device__ int getOffset(int iterations);
+
+/** Get index to iterate cells */
+static __device__ uint32_t getIndex(int offset, int iteration);
 	
+    
+/** Get offset index to iterate cells */
+static __device__ int getOffset(int iterations){    
+    return threadIdx.x + blockIdx.x * blockDim.x * iterations;
+}
+
+/** Get used index to iterate cells */
+static __device__ uint32_t getIndex(int offset, int iteration){    
+    return (uint32_t)(offset + iteration * blockDim.x);
+}
 /** 
  * @brief Initialization kernel function 
  * 
@@ -96,26 +112,26 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     __shared__ double localArray[THREADS_PER_BLOCK];   
     
     // get used list offset index
-    int offsetIndex = threadIdx.x + blockIdx.x * blockDim.x * iterations;     
+    int offset = getOffset(iterations);     
         
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
-        int usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list                
+        int usedIndex = getIndex(offset, iter); // index in the used list                
         initializeCell(usedIndex, global.gridDefinition, &model, &global); // initialize cell
     }    
     
     // set grid maximum and minimum bounds
     if(model.useBounds){ // TODO test use bounds
-        initializeGridBoundary(offsetIndex, iterations, localArray, global.gridDefinition, &global);   
+        initializeGridBoundary(offset, iterations, localArray, global.gridDefinition, &global);   
         
-        /* if(offsetIndex == 0){
+        /* if(offset == 0){
             printf("Bounds min %e\n", global.gridDefinition->lo_bound);
             printf("Bounds max %e\n", global.gridDefinition->hi_bound);
         } */
     }
     
     // normalize distribution
-    normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
+    normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
    
     // for each measurement
     double tt = 0.0;
@@ -139,20 +155,20 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
            
             while(rt < recordTime) { // time between PDF recordings      
                 g.sync();        
-                growGrid(offsetIndex, iterations, global.gridDefinition, global.grid, &model);            
-                updateIkNodes(offsetIndex, iterations, global.grid);            
-                checkCflCondition(offsetIndex, iterations, localArray, global.gridDefinition, &global);             
+                growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
+                updateIkNodes(offset, iterations, global.grid);            
+                checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
                 rt += global.gridDefinition->dt;
-                godunovMethod(offsetIndex, iterations, global.gridDefinition, global.grid);
+                godunovMethod(offset, iterations, global.gridDefinition, global.grid);
                 g.sync();            
-                updateProbability(offsetIndex, iterations, global.gridDefinition, global.grid);
-                normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
+                updateProbability(offset, iterations, global.gridDefinition, global.grid);
+                normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
                     LOG("prune tree at step %d\n", stepCount); 
                     // prune_tree(); TODO implement
-                    normalizeDistribution(offsetIndex, iterations, localArray, global.reductionArray, global.grid);
+                    normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 }
             
                 if ((model.performOutput) && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
@@ -295,9 +311,9 @@ static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIn
 }
 
 /** Update ik nodes */
-static __device__ void updateIkNodes(int offsetIndex, int iterations, Grid* grid){
+static __device__ void updateIkNodes(int offset, int iterations, Grid* grid){
     for(int iter=0; iter<iterations; iter++){      
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);
+        uint32_t usedIndex = getIndex(offset, iter);
         Cell* cell = getCell(usedIndex, grid);
         if(cell != NULL) updateIkNodesCell(cell, grid);
     }
@@ -327,11 +343,11 @@ static __device__ void initializeBoundary(Cell* cell, Model* model){
     cell->bound_val = j;
 }
 
-static __device__ void initializeGridBoundary(int offsetIndex, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global){
+static __device__ void initializeGridBoundary(int offset, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global){
     double boundaryValue = -DBL_MAX;    
     for(int iter=0; iter<iterations; iter++){        
         // index in the used list
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        uint32_t usedIndex = getIndex(offset, iter);   
         Cell* cell = getCell(usedIndex, global->grid);        
         if(cell != NULL && cell->bound_val > boundaryValue) boundaryValue = cell->bound_val;
     }
@@ -340,7 +356,7 @@ static __device__ void initializeGridBoundary(int offsetIndex, int iterations, d
     boundaryValue = DBL_MAX;   
     for(int iter=0;iter<iterations;iter++){        
         // index in the used list
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        uint32_t usedIndex = getIndex(offset, iter);  
         Cell* cell = getCell(usedIndex, global->grid);        
         if(cell != NULL && cell->bound_val < boundaryValue) boundaryValue = cell->bound_val;
     }
@@ -348,11 +364,11 @@ static __device__ void initializeGridBoundary(int offsetIndex, int iterations, d
 }
 
 /** Compute step dt */
-static __device__ void checkCflCondition(int offsetIndex, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global){
+static __device__ void checkCflCondition(int offset, int iterations, double* localArray, GridDefinition* gridDefinition, Global* global){
     double minDt = DBL_MAX; //gridDefinition->dt; TODO check
     for(int iter=0; iter<iterations; iter++){        
         // index in the used list
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        uint32_t usedIndex = getIndex(offset, iter);   
         Cell* cell = getCell(usedIndex, global->grid);        
         if(cell != NULL && cell->cfl_dt < minDt) minDt = cell->cfl_dt;
     }    
@@ -360,14 +376,14 @@ static __device__ void checkCflCondition(int offsetIndex, int iterations, double
 }
 
 /** Normalize probability distribution */
-static __device__ void normalizeDistribution(int offsetIndex, int iterations, double* localArray, double* globalArray, Grid* grid){        
+static __device__ void normalizeDistribution(int offset, int iterations, double* localArray, double* globalArray, Grid* grid){        
     // grid synchronization
     cg::grid_group g = cg::this_grid();      
    
     // store the sum of the cells probability for all the iterations at the local reduction array
     localArray[threadIdx.x] = 0.0;
     for(int iter=0;iter<iterations;iter++){
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);           
+        uint32_t usedIndex = getIndex(offset, iter);           
         Cell* cell = getCell(usedIndex, grid); 
         if(cell != NULL) localArray[threadIdx.x] += cell->prob;
     }
@@ -412,7 +428,7 @@ static __device__ void normalizeDistribution(int offsetIndex, int iterations, do
     
     // update the probability of the cells
     for(int iter=0;iter<iterations;iter++){
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x);   
+        uint32_t usedIndex = getIndex(offset, iter);   
         Cell* cell = getCell(usedIndex, grid);         
         if(cell != NULL) cell->prob /= globalArray[0];        
     }
@@ -463,10 +479,10 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
 }
 
 /** Grow grid */
-static __device__ void growGrid(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){                
+static __device__ void growGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){                
     
     for(int iter=0;iter<iterations;iter++){ 
-        uint32_t usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list              
+        uint32_t usedIndex = getIndex(offset, iter); // index in the used list              
         Cell* cell = getCell(usedIndex, grid);        
         growGridFromCell(cell, gridDefinition, grid, model);        
     }                
@@ -597,7 +613,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
  * Perform the Godunov scheme on the discretized PDF. 
  * This function performs the Godunov scheme on the discretized PDF, which is 2nd-order accurate and total variation diminishing
  */
-static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
+static __device__ void godunovMethod(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
     // grid synchronization
     cg::grid_group g = cg::this_grid();    
      
@@ -605,7 +621,7 @@ static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefini
     Cell* cell;
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
-        usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+        usedIndex = getIndex(offset, iter); // index in the used list
         cell = getCell(usedIndex, grid); 
         if(cell != NULL){
             updateDcu(cell, grid, gridDefinition);        
@@ -615,7 +631,7 @@ static __device__ void godunovMethod(int offsetIndex, int iterations, GridDefini
     g.sync();    
     
     for(int iter=0;iter<iterations;iter++){        
-        usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+        usedIndex = getIndex(offset, iter); // index in the used list
         cell = getCell(usedIndex, grid); 
         if(cell != NULL){        
             updateCtu(cell, grid, gridDefinition);
@@ -728,12 +744,12 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
 }
 
 /** Update probability for one cell */
-static __device__ void updateProbability(int offsetIndex, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
+static __device__ void updateProbability(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
     int usedIndex;
     Cell* cell;
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
-      usedIndex = (uint32_t)(offsetIndex + iter * blockDim.x); // index in the used list
+      usedIndex = getIndex(offset, iter); // index in the used list
       cell = getCell(usedIndex, grid); 
       if(cell != NULL){
         updateProbabilityCell(cell, grid, gridDefinition);        
