@@ -209,7 +209,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 //g.sync();
                 //if(threadIdx.x == 0 && blockIdx.x == 0) global.gridDefinition->dt = DBL_MAX;                    
                 //g.sync();
-                if(count == 2) break;
+                if(count == 1) break;
                 
             } // while(rt < recordTime)
 
@@ -226,6 +226,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             
             break;
         }
+        break; // FIXME remove
+        
         tt += mt;
         // perform Bayesian update for the next measurement
         if(model.performMeasure && nm < model.numMeasurements -1){
@@ -239,8 +241,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
             updateIkNodes(offset, iterations, global.grid);    
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
-        }
-        break; // FIXME remove
+        }        
     }
     
     LOG("Time marching complete.\n");
@@ -667,11 +668,24 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     for(int iter=0; iter<iterations;iter++) {
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list  
         Cell* cell = getCell(usedIndex, grid);
-        buffers[threadIdx.x + iter * THREADS_PER_BLOCK] =
+        buffers[threadIdx.x + iter * M] =
             (cell != NULL && !cell->deleted) ? 1: 0;     
     }
     
     __syncthreads();
+    
+    /*
+     g.sync(); // TODO remove
+     
+    if(threadIdx.x == 0 && blockIdx.x == 0) {
+        printf("init--\n");
+        for(int i=0;i<THREADS_PER_BLOCK * CELLS_PER_THREAD ;i++){
+            printf("%d, ", buffers[i ] );
+            }        
+        printf("\n");
+        printf("init--\n");
+        
+    }*/    
     
     // scan process in shared memory
     int bufferOut = 0, bufferIn = 1;
@@ -694,13 +708,23 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     
     g.sync();
     
+    if(threadIdx.x == 0 && blockIdx.x == 0) {
+            printf("bufferOut %d, ", bufferOut );
+        for(int i=0;i<THREADS_PER_BLOCK * CELLS_PER_THREAD * 2;i++){
+            printf("%d, ", buffers[i ] );
+            }
+        printf("\n");
+    }
+    
     // store block sum in global memory
+    
     if(threadIdx.x == 0) {
         for(int iter=0; iter<iterations;iter++) {
             blockSums[blockIdx.x + iter * BLOCKS] = buffers[bufferOut * N + (M-1) + iter * M];
+            //printf("total for block %d, iteration %d, blockSum index %d : %d\n", blockIdx.x, iter, blockIdx.x + iter * BLOCKS, buffers[bufferOut * N + (M-1) + iter * M]);
         }
     }
-    
+
     g.sync();
     
     // scan block sums in global memory   
@@ -721,16 +745,36 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
         g.sync();
     } 
     
+    if(threadIdx.x == 0 && blockIdx.x == 0) {
+        printf("\n");
+        for(int i=0;i<BLOCKS*2;i++) printf("%d, ", blockSums[i]);
+        printf("\n");
+    }
+   
     // compact used list
     for(int iter=0; iter<iterations;iter++) {
-        uint32_t blockSum = blockSums[blockSumsOut * gridDim.x + blockIdx.x];
+        uint32_t blockSum = (blockIdx.x > 0)? blockSums[blockSumsOut * gridDim.x + blockIdx.x-1] : 0; // get the sum of the previous block
         uint32_t threadSum = buffers[bufferOut * N + threadIdx.x + iter * M];
-        uint32_t dstIndex = blockSum + threadSum;
+        uint32_t dstIndex = blockSum + threadSum - 1; // minus one because the scan in shared memory is inclusive
         uint32_t srcIndex = getIndex(offset, iter);
         
-        printf("compact, move from %d to %d\n", srcIndex, dstIndex);
-    }
+        if(iter == 0 && (blockIdx.x == 0 || blockIdx.x == 1)){
+            Cell* cell = getCell(srcIndex, grid);
+            if(cell != NULL && !cell->deleted){                
+                printf("compact, move from %d to %d, blocksum %d, thread sum %d\n", srcIndex, dstIndex, blockSum, threadSum);                        
+            }
+        }
+    } 
     
+    // compute new used list size
+    if(threadIdx.x == 0 && blockIdx.x == 0) {
+        uint32_t usedListSize = 0;
+        for(int i=0;i<BLOCKS;i++) {
+            usedListSize += blockSums[i];            
+        }
+        printf("new used list size %d\n", usedListSize);
+    }
+   
 }
 
 /** Mark the cell for deletion if is negligible */
