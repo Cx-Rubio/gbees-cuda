@@ -9,6 +9,7 @@
 
 /** Null reference for i and k nodes */
 #define NULL_REFERENCE UINT32_MAX
+#define RESERVED UINT32_MAX-1
 
 /** Grid definition */
 typedef struct {

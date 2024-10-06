@@ -141,6 +141,11 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
     // clean hashtable memory
     memset(hashtableHost, 0, HASH_TABLE_RATIO * size * sizeof(HashTableEntry));
     
+    // set hashtable usedIndex to NULL_REFERENCE
+    for(int i=0;i<HASH_TABLE_RATIO * size;i++){
+        hashtableHost[i].usedIndex = NULL_REFERENCE;
+    }
+    
     // recursive initialization of the hashtable and used list 
     int32_t key[DIM];
     uint32_t usedSize = 0;
@@ -186,11 +191,11 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
-        if(!hashtable[hashIndex].usedIndex){            
+        if(hashtable[hashIndex].usedIndex == NULL_REFERENCE){            
             uint32_t usedIndex = *usedSizePtr;
             
             // update hashtable
-            hashtable[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell   
+            hashtable[hashIndex].usedIndex = usedIndex;
             hashtable[hashIndex].hashIndex = hashIndex;
             copyKey(key,  hashtable[hashIndex].key); 
             
@@ -271,11 +276,11 @@ __device__ void insertCell(Cell* cell, Grid* grid){
    
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
-        if(!grid->table[hashIndex].usedIndex){            
+        if(grid->table[hashIndex].usedIndex != NULL_REFERENCE){            
             uint32_t usedIndex = grid->usedSize;
             
             // update hashtable
-            grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell
+            grid->table[hashIndex].usedIndex = usedIndex;
             grid->table[hashIndex].hashIndex = hashIndex;
             copyKey(cell->state,  grid->table[hashIndex].key); 
             
@@ -311,15 +316,15 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
         uint32_t hashIndex = (hash + counter) % capacity;                
  
         // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
-        uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, 0, UINT32_MAX);    
+        uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);    
     
         // return if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
-        if(existingUsedIndex > 0 && existingUsedIndex != UINT32_MAX){                
-            if(equalState(grid->table[hashIndex].key, cell->state)) return; // if already exits, return 
+        if(existingUsedIndex != NULL_REFERENCE && existingUsedIndex != RESERVED){                
+            if(equalState(grid->table[hashIndex].key, cell->state)) return; // if already exits, return
         }
        
         // create a new cell
-        if(!existingUsedIndex){                                    
+        if(existingUsedIndex == NULL_REFERENCE){                                    
             // check and reserve used list location
             uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
 
@@ -332,7 +337,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
             // update hashtable                
             copyKey(cell->state,  grid->table[hashIndex].key);  
             grid->table[hashIndex].hashIndex = hashIndex;            
-            grid->table[hashIndex].usedIndex = usedIndex + 1; // 0 is reserved to mark not used cell                
+            grid->table[hashIndex].usedIndex = usedIndex;
             
             // reserve one free slot and obtain its index
             uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
@@ -366,12 +371,12 @@ __device__ void deleteCell(int32_t* state, Grid* grid){
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
-        if(grid->table[hashIndex].usedIndex && equalState(grid->table[hashIndex].key, state)){ // if not deleted and match state
-            uint32_t usedIndex = grid->table[hashIndex].usedIndex - 1; // 0 is reserved to mark not used cell
+        if(grid->table[hashIndex].usedIndex != NULL_REFERENCE && equalState(grid->table[hashIndex].key, state)){ // if not deleted and match state
+            uint32_t usedIndex = grid->table[hashIndex].usedIndex;
             uint32_t usedHeap = grid->usedList[usedIndex].heapIndex;
             
             // mark the cell in the hash-table as emtpy
-            grid->table[hashIndex].usedIndex = 0;
+            grid->table[hashIndex].usedIndex = NULL_REFERENCE;
             
             // add the index to the free list
             grid->freeList[ grid->freeSize ] = usedHeap;
@@ -380,7 +385,7 @@ __device__ void deleteCell(int32_t* state, Grid* grid){
             // remove the index from the used list (compact-up the table)
             for(int i=usedIndex+1;i < grid->usedSize; i++){
                 uint32_t hashIndex = grid->usedList[i].hashTableIndex;
-                grid->table[hashIndex].usedIndex = i; 
+                grid->table[hashIndex].usedIndex = i-1; 
                 grid->usedList[i-1] = grid->usedList[i];
             }
             grid->usedSize--;
@@ -403,10 +408,10 @@ __device__ uint32_t findCell(int32_t* state, Grid* grid){
    
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
-        if(grid->table[hashIndex].usedIndex && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
-            return grid->table[hashIndex].usedIndex - 1; // FIXME 
+        if(grid->table[hashIndex].usedIndex != NULL_REFERENCE && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
+            return grid->table[hashIndex].usedIndex;
         }
-        if(grid->table[hashIndex].usedIndex == 0) break;
+        if(grid->table[hashIndex].usedIndex == NULL_REFERENCE) break;
     } 
     return NULL_REFERENCE;
 }

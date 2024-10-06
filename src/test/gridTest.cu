@@ -47,7 +47,7 @@ __global__ void gridTest(Grid grid){
     insertCell(&cell3, &grid);    
     
     printGrid(&grid);    
-    
+  /*  
     // Delete cell
     printf("$ Delete cell1\n");    
     deleteCell(cell1.state, &grid);
@@ -63,12 +63,13 @@ __global__ void gridTest(Grid grid){
     
     printf("$ Insert cell2\n");    
     insertCell(&cell2, &grid);    
-    */
+    
     // Delete cell
     printf("$ Delete cell2\n");    
     deleteCell(cell2.state, &grid);  
     
-    printGrid(&grid);    
+    printGrid(&grid);  
+*/  
         
 }
 
@@ -89,7 +90,7 @@ __device__ void printGrid(Grid* grid){
                 printf("%d", grid->table[i].key[j]);
                 if(j < DIM-1) printf(", ");
                 }        
-            printf("], Used index: %d [%d]\n", grid->table[i].usedIndex, grid->table[i].usedIndex-1);            
+            printf("], Used index: %d\n", grid->table[i].usedIndex);            
         }
     }
     
