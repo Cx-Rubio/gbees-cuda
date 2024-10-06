@@ -57,6 +57,15 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
 /** Create new cell in the grid */
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
+/** Prune grid */
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
+
+/** Mark the cell for deletion if is negligible */
+static __device__ void markNegligibleCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid);
+
+/** Check id exists significant flux from cell and its edges */
+static __device__ bool fluxFrom(Cell* cell, enum Direction direction, int dimension, GridDefinition* gridDefinition, Grid* grid);
+
 /** Perform the Godunov scheme on the discretized PDF*/
 static __device__ void godunovMethod(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
@@ -80,6 +89,12 @@ static __device__ void updateProbability(int offset, int iterations, GridDefinit
 
 /** Update probability for one cell */
 static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef);
+
+/** Apply measurement */
+static __device__ void applyMeasurement(int offset, int iterations, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model);
+
+/** Apply measurement for one cell */
+static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Get offset index to iterate cells */
 static __device__ int getOffset();
@@ -154,10 +169,14 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         // slight variation w.r.t to original implementation as record time is recalculated for each measurement
         double recordTime = measurement->T / (model.numDistRecorded-1);
         
+        int count = 0; // FIXME remove
+        
         while(fabs(mt - measurement->T) > TOL) {              
             rt = 0.0;
            
             while(rt < recordTime) { // time between PDF recordings      
+            count+=1; // FIXME remove
+            
                 g.sync();        
                 growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
                 updateIkNodes(offset, iterations, global.grid);            
@@ -168,11 +187,12 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 updateProbability(offset, iterations, global.gridDefinition, global.grid);
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
-return;
-                if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure
-                    LOG("prune tree at step %d\n", stepCount); 
-                    // prune_tree(); TODO implement
+
+                if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
+                    pruneGrid(offset, iterations, global.gridDefinition, global.grid);
+                    updateIkNodes(offset, iterations, global.grid);    
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
+                    LOG("post prune active cells %d\n", global.grid->usedSize);
                 }
             
                 if ((model.performOutput) && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
@@ -185,6 +205,8 @@ return;
                 //g.sync();
                 //if(threadIdx.x == 0 && blockIdx.x == 0) global.gridDefinition->dt = DBL_MAX;                    
                 //g.sync();
+                if(count == 2) break;
+                
             } // while(rt < recordTime)
 
             if (((stepCount-1) % model.outputPeriodSteps != 0) || (!model.performOutput)){ // print size to terminal  
@@ -202,12 +224,16 @@ return;
         tt += mt;
         // perform Bayesian update for the next measurement
         if(model.performMeasure && nm < model.numMeasurements -1){
-            /*
-            meas_up_recursive();
-            normalize_tree();
-            prune_tree();
-            normalize_tree(); 
-            */
+            
+            LOG("\nPERFORMING BAYESIAN UPDATE AT: %f TU...\n\n", tt);
+            
+            measurement = &global.measurements[nm];
+            
+            applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);
+            normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
+            pruneGrid(offset, iterations, global.gridDefinition, global.grid);
+            updateIkNodes(offset, iterations, global.grid);    
+            normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
         }
         break; // FIXME remove
     }
@@ -254,14 +280,14 @@ static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDe
 }
 
 /** Calculate gaussian probability at state x given mean and covariance */
-static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurements){    
+static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurement){    
     double mInvX[DIM];
     double diff[DIM];
     
     for(int i=0;i<DIM;i++){
         diff[i] = key[i] * gridDefinition->dx[i];
     }
-    multiplyMatrixVector( (double*)measurements[0].covInv, diff, mInvX, DIM);
+    multiplyMatrixVector( (double*)measurement->covInv, diff, mInvX, DIM);
     double dotProduct = computeDotProduct(diff, mInvX, DIM);
     return exp(-0.5 * dotProduct);
 }
@@ -567,16 +593,12 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
     int32_t state[DIM]; // state indexes for the new cells
     
     for(int dimension=0;dimension<DIM;dimension++){
-        if(direction == FORWARD) {
-            if(cell->v[dimension] <= 0.0) continue;             
-        } else {
-            if(cell->v[dimension] >= 0.0) continue;             
-        }
+        if(cell->v[dimension] * direction <= 0.0 ) continue;
         
         // check edges
         for (int j = 0; j < DIM; j++){
             if(j != dimension){
-                if( (directionJ == FORWARD && cell->v[j] > 0.0) || (directionJ == BACKWARD && cell->v[j] < 0.0) )  {                
+                if(cell->v[j] * directionJ > 0.0) {                                
                     copyKey(cell->state, state);
                     state[dimension] += direction;
                     state[j] += directionJ;
@@ -586,7 +608,6 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
         }   
     }        
 }
-
 
 /** Create new cell in the grid if not exists
  *  checks existence only with previous cells, not with other concurrent create cells
@@ -613,6 +634,58 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
     insertCellConcurrent(&cell, grid);
 }
 
+/** Prune grid */
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid){  
+    for(int iter=0;iter<iterations;iter++){ 
+        uint32_t usedIndex = getIndex(offset, iter); // index in the used list            
+        Cell* cell = getCell(usedIndex, grid); 
+        if(cell != NULL) {
+            markNegligibleCell(cell, gridDefinition, grid);                
+        }
+    }       
+}
+
+/** Mark the cell for deletion if is negligible */
+static __device__ void markNegligibleCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid){    
+    // check if its probability is negligible
+    if(cell->prob >= gridDefinition->threshold) return;    
+    
+    for(int i=0;i<DIM;i++){
+        // look backwards node
+        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
+        if( fluxFrom(iCell, FORWARD, i, gridDefinition, grid) ) return;
+            
+        // look forwards node
+        Cell* kCell = getCell(cell->kNodes[i]-1, grid);
+        if( fluxFrom(kCell, BACKWARD, i, gridDefinition, grid) ) return;        
+    }
+       
+    // mark for deletion
+    //printf("mark for deletion %d,%d,%d\n", cell->state[0], cell->state[1], cell->state[2]);
+    // TODO implement deletion
+}
+
+/** Check id exists significant flux from cell and its edges */
+static __device__ bool fluxFrom(Cell* cell, enum Direction direction, int dimension, GridDefinition* gridDefinition, Grid* grid){
+    if(cell == NULL) return false;
+        
+    // check flux from itself
+    if(cell->prob >= gridDefinition->threshold && cell->v[dimension] * direction > 0.0) return true;
+    
+    // check flux from edges
+    for (int j=0; j<DIM; j++){
+        if(j != dimension){
+            Cell* iCell = getCell(cell->iNodes[j]-1, grid);
+            if(iCell != NULL && iCell->v[dimension] * direction > 0.0 && iCell->v[j] > 0.0 && iCell->prob >= gridDefinition->threshold) return true;
+            
+            Cell* kCell = getCell(cell->kNodes[j]-1, grid);
+            if(kCell != NULL && kCell->v[dimension] * direction > 0.0 && kCell->v[j] < 0.0 && kCell->prob >= gridDefinition->threshold) return true;
+        }
+    }
+    return false;
+}
+
+    
 /** 
  * Perform the Godunov scheme on the discretized PDF. 
  * This function performs the Godunov scheme on the discretized PDF, which is 2nd-order accurate and total variation diminishing
@@ -749,12 +822,10 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
 
 /** Update probability for one cell */
 static __device__ void updateProbability(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid) {    
-    int usedIndex;
-    Cell* cell;
     // initialize cells
     for(int iter=0;iter<iterations;iter++){        
-      usedIndex = getIndex(offset, iter); // index in the used list
-      cell = getCell(usedIndex, grid); 
+      int usedIndex = getIndex(offset, iter); // index in the used list
+      Cell* cell = getCell(usedIndex, grid); 
       if(cell != NULL){
         updateProbabilityCell(cell, grid, gridDefinition);        
       }
@@ -777,10 +848,35 @@ static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinit
         } */                 
     }    
     
-    cell->prob = fmax(cell->prob, 0.0);
+    cell->prob = fmax(cell->prob, 0.0);    
     
    /* if(cell->state[0] == 2 && cell->state[1] == 1 && cell->state[2] == 7){
         printf("cell {%d,%d,%d}, prob: %1.16e\n", cell->state[0], cell->state[1], cell->state[2], cell->prob);
     }*/
     //    printf("%1.16e\n", cell->prob);
+}
+
+/** Apply measurement */
+static __device__ void applyMeasurement(int offset, int iterations, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model){
+    // initialize cells
+    for(int iter=0;iter<iterations;iter++){        
+      int usedIndex = getIndex(offset, iter); // index in the used list
+      Cell* cell = getCell(usedIndex, grid); 
+      if(cell != NULL){
+        applyMeasurementCell(cell, measurement, gridDefinition, grid, model);        
+      }
+    }
+    
+}
+
+/** Apply measurement for one cell */
+static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model){
+    // TODO implement
+    
+    /*double y[DIM];
+    (*h)(y, x, G.dx, T.coef); 
+
+    double prob = gaussProbability(M.dim, y, M);   
+    r->prob *= prob;
+    */
 }
