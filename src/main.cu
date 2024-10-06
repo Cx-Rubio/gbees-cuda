@@ -6,7 +6,6 @@
 #include <math.h>
 #include <stdbool.h>
 #include <time.h>
-#include <cuda_profiler_api.h>
 #include "config.h"
 #include "macro.h"
 #include "device.h"
@@ -15,6 +14,7 @@
 #include "test/gridTest.h"
 #include "models.h"
 #include "measurement.h"
+#include "record.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -141,7 +141,8 @@ static void executeGbees(bool autotest, int device){
     
     if(autotest){        
         log("Launch test kernel\n");        
-        gridTest<<<1,1>>>(gridHost);    
+        gridTest<<<1,1>>>(gridHost); 
+        checkKernelError();   
     } else {            
         // check if the block count can fit in the GPU
         size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;        
@@ -155,16 +156,15 @@ static void executeGbees(bool autotest, int device){
         dim3 dimBlock(threads, 1, 1);
         dim3 dimGrid(blocks, 1, 1);        
         cudaLaunchCooperativeKernel((void*)gbeesKernel, dimGrid, dimBlock, kernelArgs, sharedMemorySize);
+        checkKernelError();
  
         HANDLE_CUDA(cudaFree(global.reductionArray)); 
+        
+        if(model.performRecord){
+            recordResult(gridDevice, &gridDefinitionHost);        
+        }
     }
-    
-    // check kernel error
-    cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            printf("Kernel error: %s\n", cudaGetErrorString(err));
-    }   
-
+  
     cudaDeviceSynchronize();    
 
     // free device memory

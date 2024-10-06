@@ -51,6 +51,10 @@ static void HandleNoGpu(){
 }
 #define HANDLE_NO_GPU() (HandleNoGpu())
 
+/**
+ * @brief Check kernel error
+ */
+__host__ void checkKernelError();
 
 /**
  * @brief Log a message if enabled log in config.h (host)

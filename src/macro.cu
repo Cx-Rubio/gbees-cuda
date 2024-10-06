@@ -4,7 +4,19 @@
 #include "config.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include <cuda_profiler_api.h>
 
+/**
+ * @brief Check kernel error
+ */
+__host__ void checkKernelError(){
+    // check kernel error
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("Kernel error: %s\n", cudaGetErrorString(err));
+    }    
+}
+    
 /**
  * @brief Log a message if enabled log in config.h (host)
  */
