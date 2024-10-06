@@ -1,6 +1,6 @@
 // Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 
-#include "util.h"
+#include "macro.h"
 #include "config.h"
 #include <stdio.h>
 #include <stdarg.h>

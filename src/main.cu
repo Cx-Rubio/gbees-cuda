@@ -15,7 +15,6 @@
 #include "test/gridTest.h"
 #include "models.h"
 #include "measurement.h"
-#include "util.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -114,7 +113,7 @@ static void executeGbees(bool autotest, int measurementCount, int device){
     Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
     
     // read measurements files and copy to device
-    readMeasurements(measurementsHost, &model, measurementCount); 
+    readMeasurements(measurementsHost, model.mDim, model.mDir, measurementCount); 
 #ifdef ENABLE_LOG   
     printMeasurements(measurementsHost, measurementCount);
 #endif

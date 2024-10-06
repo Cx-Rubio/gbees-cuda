@@ -5,8 +5,36 @@
 
 #include <stdint.h>
 #include "config.h"
-#include "gbees.h"
 #include "measurement.h"
+
+/** Null reference for i and k nodes */
+#define NULL_REFERENCE UINT32_MAX
+
+/** Grid definition */
+typedef struct {
+    int maxCells;        
+    double center[DIM];
+    double dx[DIM];
+    double dt;
+    double threshold;    
+    double hi_bound;
+    double lo_bound;
+} GridDefinition;
+
+/** Cell definition */
+typedef struct Cell Cell;
+struct Cell {    
+    double prob;
+    double v[DIM];
+    double ctu[DIM];
+    int32_t state[DIM];
+    double x[DIM];
+    uint32_t iNodes[DIM];
+    uint32_t kNodes[DIM];
+    double dcu;
+    double cfl_dt;
+    double bound_val;    
+};
 
 /** Hash table entry */
 typedef struct {
@@ -116,7 +144,7 @@ __device__ void deleteCell(int32_t* state, Grid* grid);
  * 
  * @param state state coordinates of the cell to find
  * @param grid grid pointer
- * @return used index stored in the hashtable (one more than the real index of the used list array) for the cell or 0 if not exists
+ * @return used index for the cell or NULL_REFERENCE if not exists
  */
 __device__ uint32_t findCell(int32_t* state, Grid* grid);
 

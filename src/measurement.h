@@ -5,7 +5,6 @@
 
 #include "config.h"
 #include "macro.h"
-#include "models.h"
 
 /** Forward declaration */
 struct Model;
@@ -62,10 +61,11 @@ void freeMeasurementsDevice(Measurement* ptr);
  * @brief Read measurements from files
  * 
  * @param measurement [output] measurement array
- * @param model model pointer
+ * @param mDimension dimension of measurements (except the first one with dimension DIM)
+ * @param mDir measurements folder
  * @param count number of measurement files to read 
  */
-void readMeasurements(Measurement* measurements, Model* model, int count);
+void readMeasurements(Measurement* measurements, int mDimension, char* mDir, int count);
 
 /** 
  * @brief Read one measurement from file

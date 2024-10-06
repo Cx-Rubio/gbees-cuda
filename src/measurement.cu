@@ -3,7 +3,6 @@
 #include "measurement.h"
 #include <stdio.h>
 #include "error.h"
-#include "models.h"
 #include "maths.h"
 
 /**
@@ -62,13 +61,14 @@ void freeMeasurementsDevice(Measurement* ptr){
  * @brief Read measurements from files
  * 
  * @param measurement [output] measurement array
- * @param model model pointer
+ * @param mDimension dimension of measurements (except the first one with dimension DIM)
+ * @param mDir measurements folder
  * @param count number of measurement files to read 
  */
-void readMeasurements(Measurement* measurements, Model* model, int count){    
+void readMeasurements(Measurement* measurements, int mDimension, char* mDir, int count){    
     for(int i=0;i<count;i++){
-        int dimension = (i == 0)? DIM : model->mDim;
-        readMeasurement(&measurements[i], dimension, model->mDir, i);
+        int dimension = (i == 0)? DIM : mDimension;
+        readMeasurement(&measurements[i], dimension, mDir, i);
         computeCovarianceInverse(&measurements[i], dimension);            
     }
 }

@@ -1,7 +1,8 @@
 // Copyright 2024 by Carlos Rubio (ULE) and Benjamin Hanson (UCSD), published under BSD 3-Clause License.
 #include "config.h"
-#include "util.h"
+#include "macro.h"
 #include "kernel.h"
+#include "models.h"
 #include <stdio.h>
 #include <cooperative_groups.h>
 #include "maths.h"
@@ -260,7 +261,6 @@ static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDe
         
         // update cell          
         cell = getCell(usedIndex, global->grid);
-        cell->new_f = 0;
         
         // compute state
         for(int i=0;i<DIM;i++){
@@ -301,9 +301,7 @@ static __device__ void initializeAdv(GridDefinition* gridDefinition, Model* mode
     for(int i = 0; i < DIM; i++){
         cell->v[i] = xk[i];
         sum += fabs(cell->v[i]) / gridDefinition->dx[i];
-    }
-  
-    cell->new_f = 1;
+    }      
     cell->cfl_dt = 1.0/sum;
     
     /*if(cell->state[0]==2 && cell->state[1]==-1 && cell->state[2]==-1){
@@ -321,23 +319,22 @@ static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIn
         // if is not the first cell in the dimension i        
         if(cell->state[i] > -(int)grid->initialExtent[i]){
             uint32_t iIndex = usedIndex - offset;
-            cell->iNodes[i] = iIndex + 1; // reserve 0 for no reference            
+            cell->iNodes[i] = iIndex;
         } else {            
-            cell->iNodes[i] = 0;
+            cell->iNodes[i] = NULL_REFERENCE;
         }
         
         // if is not the last cell in the dimension i        
         if(cell->state[i] < (int)grid->initialExtent[i]){
             uint32_t kIndex = usedIndex + offset;        
-            cell->kNodes[i] = kIndex + 1; // reserve 0 for no reference            
+            cell->kNodes[i] = kIndex;
         }  else {            
-            cell->kNodes[i] = 0;
+            cell->kNodes[i] = NULL_REFERENCE;
         }
         
         if(i<=0) break;
         offset *= grid->initialExtent[i] * 2 + 1;
-    }    
-    cell->ik_f = 1;
+    }        
 }
 
 /** Update ik nodes */
@@ -578,7 +575,7 @@ static __device__ void growGridDireccional(Cell* cell, enum Direction direction,
         }
     
         // create next face if not exists
-        if(!nextFaceIndex){
+        if(nextFaceIndex == NULL_REFERENCE){
             // create new cell key[dimension] = cell->key[dimension]+direction
             copyKey(cell->state, state);
             state[dimension] += direction;
@@ -625,8 +622,6 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
     }
         
     cell.prob = 0.0; 
-    cell.new_f = 0;
-    cell.ik_f = 0;
     cell.dcu = 0.0;
     initializeAdv(gridDefinition, model, &cell);
     
@@ -652,11 +647,11 @@ static __device__ void markNegligibleCell(Cell* cell, GridDefinition* gridDefini
     
     for(int i=0;i<DIM;i++){
         // look backwards node
-        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
+        Cell* iCell = getCell(cell->iNodes[i], grid);
         if( fluxFrom(iCell, FORWARD, i, gridDefinition, grid) ) return;
             
         // look forwards node
-        Cell* kCell = getCell(cell->kNodes[i]-1, grid);
+        Cell* kCell = getCell(cell->kNodes[i], grid);
         if( fluxFrom(kCell, BACKWARD, i, gridDefinition, grid) ) return;        
     }
        
@@ -675,10 +670,10 @@ static __device__ bool fluxFrom(Cell* cell, enum Direction direction, int dimens
     // check flux from edges
     for (int j=0; j<DIM; j++){
         if(j != dimension){
-            Cell* iCell = getCell(cell->iNodes[j]-1, grid);
+            Cell* iCell = getCell(cell->iNodes[j], grid);
             if(iCell != NULL && iCell->v[dimension] * direction > 0.0 && iCell->v[j] > 0.0 && iCell->prob >= gridDefinition->threshold) return true;
             
-            Cell* kCell = getCell(cell->kNodes[j]-1, grid);
+            Cell* kCell = getCell(cell->kNodes[j], grid);
             if(kCell != NULL && kCell->v[dimension] * direction > 0.0 && kCell->v[j] < 0.0 && kCell->prob >= gridDefinition->threshold) return true;
         }
     }
@@ -740,8 +735,8 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
     cell->dcu = 0.0;   
     for(int i=0; i<DIM; i++){
         cell->ctu[i] = 0.0;
-        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
-        Cell* kCell = getCell(cell->kNodes[i]-1, grid);
+        Cell* iCell = getCell(cell->iNodes[i], grid);
+        Cell* kCell = getCell(cell->kNodes[i], grid);
 
         double dcu_p = 0;
         double dcu_m = 0;
@@ -779,7 +774,7 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
 static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {         
  
     for(int i=0; i<DIM; i++){
-        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
+        Cell* iCell = getCell(cell->iNodes[i], grid);
         if(iCell == NULL) continue;    
         double flux = gridDef->dt*(cell->prob - iCell->prob) / (2.0 * gridDef->dx[i]);            
         
@@ -788,8 +783,8 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
         for(int j=0; j<DIM; j++){
             if(j == i) continue;
             
-            Cell* jCell = getCell(cell->iNodes[j]-1, grid);
-            Cell* pCell = getCell(iCell->iNodes[j]-1, grid);
+            Cell* jCell = getCell(cell->iNodes[j], grid);
+            Cell* pCell = getCell(iCell->iNodes[j], grid);
 
             atomicAdd(&cell->ctu[j], -uPlus(vUpstream) * uPlus(cell->v[j]) * flux);
             atomicAdd(&iCell->ctu[j], -uMinus(vUpstream) * uPlus(iCell->v[j]) * flux);
@@ -805,13 +800,13 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
 	    //High-resolution correction terms
         double th = 0.0;
         if (vUpstream > 0){
-            Cell* iiCell = getCell(iCell->iNodes[i]-1, grid);
+            Cell* iiCell = getCell(iCell->iNodes[i], grid);
             th = (iiCell != NULL)? 
                 (iCell->prob - iiCell->prob)/(cell->prob - iCell->prob):
                 (iCell->prob)/(cell->prob - iCell->prob);
                 
         } else {
-            Cell* kCell = getCell(cell->kNodes[i]-1, grid);
+            Cell* kCell = getCell(cell->kNodes[i], grid);
             th = (kCell != NULL)?
                 (kCell->prob - cell->prob)/(cell->prob - iCell->prob):
                 (-cell->prob)/(cell->prob - iCell->prob);                             
@@ -837,7 +832,7 @@ static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinit
     cell->prob += cell->dcu;
         
     for(int i=0; i<DIM; i++){
-        Cell* iCell = getCell(cell->iNodes[i]-1, grid);
+        Cell* iCell = getCell(cell->iNodes[i], grid);
         cell->prob -= (iCell != NULL)?
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);  

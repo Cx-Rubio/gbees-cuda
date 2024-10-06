@@ -3,7 +3,6 @@
 #include "grid.h"
 #include "config.h"
 #include "macro.h"
-#include "util.h"
 #include <string.h>
 #include <cooperative_groups.h>
 #include <stdint.h>
@@ -396,7 +395,7 @@ __device__ void deleteCell(int32_t* state, Grid* grid){
  * 
  * @param state state coordinates of the cell to find
  * @param grid grid pointer
- * @return used index stored in the hashtable (one more than the real index of the used list array) for the cell or 0 if not exists
+ * @return used index for the cell or NULL_REFERENCE if not exists
  */
 __device__ uint32_t findCell(int32_t* state, Grid* grid){
    uint32_t hash = computeHash(state);   
@@ -405,11 +404,11 @@ __device__ uint32_t findCell(int32_t* state, Grid* grid){
    for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
         if(grid->table[hashIndex].usedIndex && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
-            return grid->table[hashIndex].usedIndex; // 0 is reserved to mark not used cell
+            return grid->table[hashIndex].usedIndex - 1; // FIXME 
         }
         if(grid->table[hashIndex].usedIndex == 0) break;
     } 
-    return 0;
+    return NULL_REFERENCE;
 }
 
  /**
