@@ -51,4 +51,21 @@ static void HandleNoGpu(){
 }
 #define HANDLE_NO_GPU() (HandleNoGpu())
 
+/**
+ * @brief Check kernel error
+ */
+__host__ void checkKernelError();
+
+/**
+ * @brief Log a message if enabled log in config.h (host)
+ */
+__host__ void log(const char* msg, ...);
+
+/** Macro for log from device */
+#ifdef ENABLE_LOG  
+    #define LOG(...) if(threadIdx.x == 0 && blockIdx.x == 0) printf(__VA_ARGS__)
+#else
+    #define LOG(...) void()
+#endif
+
 #endif

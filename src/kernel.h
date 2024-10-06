@@ -11,6 +11,7 @@ typedef struct {
     double* reductionArray; // global array for reduction processes
     Measurement* measurements;
     Grid* grid;
+    GridDefinition* gridDefinition;    
 } Global;
 
 /** Time step tolerance */
@@ -23,11 +24,9 @@ enum Direction {FORWARD=1, BACKWARD=-1};
  * @brief Initialization kernel function 
  * 
  * @param iterations number of cells that should process the same thread
- * @param gridDefinition the grid definition
- * @param grid the grid object
  * @param model the model
- * @param measurements the list of measurements
+ * @param global global memory data
  */
-__global__ void gbeesKernel(int iterations, GridDefinition gridDefinition, Model model, Global global);
+__global__ void gbeesKernel(int iterations, Model model, Global global);
 
 #endif

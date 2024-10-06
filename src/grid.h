@@ -5,13 +5,45 @@
 
 #include <stdint.h>
 #include "config.h"
-#include "gbees.h"
 #include "measurement.h"
+
+/** Null reference for i and k nodes and used index in hashtable */
+#define NULL_REFERENCE UINT32_MAX
+
+/** Reserved hashtable slot */
+#define RESERVED UINT32_MAX-1
+
+/** Grid definition */
+typedef struct {
+    int maxCells;        
+    double center[DIM];
+    double dx[DIM];
+    double dt;
+    double threshold;    
+    double hi_bound;
+    double lo_bound;
+} GridDefinition;
+
+/** Cell definition */
+typedef struct Cell Cell;
+struct Cell {    
+    double prob;
+    double v[DIM];
+    double ctu[DIM];
+    int32_t state[DIM];
+    double x[DIM];
+    uint32_t iNodes[DIM];
+    uint32_t kNodes[DIM];
+    double dcu;
+    double cfl_dt;
+    double bound_val;    
+};
 
 /** Hash table entry */
 typedef struct {
     int32_t  key[DIM];
     uint32_t  usedIndex;    
+    uint32_t  hashIndex;    
     } HashTableEntry;
 
 /** Used list entry */
@@ -31,9 +63,32 @@ typedef struct {
     uint32_t freeSize;
     uint32_t* freeList; 
     Cell* heap; 
+    uint32_t* scanBuffer; // buffer to perform exclusive-scan in the prune operation
     } Grid;
 
 /** --- Device global memory allocations --- */
+
+/**
+ * @brief Alloc grid definition in device global memory 
+ * 
+ * @param gridDefinitionDevice address of the pointer to the grid definition device struct
+ */
+void allocGridDefinitionDevice(GridDefinition** gridDefinitionDevice);
+
+/**
+ * @brief Free grid definition in device global memory
+ *  
+ * @param gridDefinitionDevice grid definition device pointer
+ */
+void freeGridDefinition(GridDefinition* gridDefinitionDevice);
+
+/**
+ * @brief Initialize grid definition in device memory
+ * 
+ * @param gridDefinitionHost grid definition host pointer
+ * @param gridDefinitionDevice grid definition device pointer
+ */
+void initializeGridDefinitionDevice(GridDefinition* gridDefinitionHost, GridDefinition* gridDefinitionDevice);
 
 /**
  * @brief Alloc grid in device global memory 
@@ -93,7 +148,7 @@ __device__ void deleteCell(int32_t* state, Grid* grid);
  * 
  * @param state state coordinates of the cell to find
  * @param grid grid pointer
- * @return used index stored in the hashtable (one more than the real index of the used list array) for the cell or 0 if not exists
+ * @return used index for the cell or NULL_REFERENCE if not exists
  */
 __device__ uint32_t findCell(int32_t* state, Grid* grid);
 

@@ -6,7 +6,6 @@
 #include <math.h>
 #include <stdbool.h>
 #include <time.h>
-#include <cuda_profiler_api.h>
 #include "config.h"
 #include "macro.h"
 #include "device.h"
@@ -15,6 +14,7 @@
 #include "test/gridTest.h"
 #include "models.h"
 #include "measurement.h"
+#include "record.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -26,10 +26,10 @@ static void signalHandler(int signal);
 static void printUsageAndExit(const char* command);
 
 /** Execute GBEES algorithm */
-static void executeGbees(bool autotest, int measurementCount, int device);
+static void executeGbees(bool autotest, int device);
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Model, Global), size_t sharedMemory, int device);
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global), size_t sharedMemory, int device);
 
 /**
  * @brief Main function 
@@ -59,22 +59,16 @@ int main(int argc, char **argv) {
         struct timespec start, end;
         clock_gettime(CLOCK_REALTIME, &start); // start time measurement
 #endif
-    int measurementCount = 2; // TODO read parameter measurement count
-
+    
     // execute GBEES algorithm
-    executeGbees(autotest, measurementCount, device); 
+    executeGbees(autotest, device); 
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
         clock_gettime(CLOCK_REALTIME, &end);
         double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
-#endif
-
-    
-
-#ifdef ENABLE_LOG
         // print elapsed time
-        printf("Elapsed: %f ms\n", time_spent*1000.0);
+        log("Elapsed: %f ms\n", time_spent*1000.0);
 #endif
              
     return EXIT_SUCCESS;
@@ -98,12 +92,12 @@ void signalHandler(int signal){
 
 /** Print usage and exit */
 void printUsageAndExit(const char* command){
-    printf("Usage: %s measuremetsFolder {autotest}\n", command);
+    printf("Usage: %s {autotest}\n", command);
     exit(EXIT_SUCCESS);
 }
 
 /** Execute GBEES algorithm */
-static void executeGbees(bool autotest, int measurementCount, int device){
+static void executeGbees(bool autotest, int device){
     // grid configuration
     int threads = THREADS_PER_BLOCK;
     int blocks = BLOCKS;
@@ -112,35 +106,43 @@ static void executeGbees(bool autotest, int measurementCount, int device){
     // obtain model
     Model model;
     configureLorenz3D(&model);
+    int numMeasurements = model.numMeasurements;
         
     // allocate measurements memory
-    Measurement* measurementsHost = allocMeasurementsHost(measurementCount);
-    Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
+    Measurement* measurementsHost = allocMeasurementsHost(numMeasurements);
+    Measurement* measurementsDevice = allocMeasurementsDevice(numMeasurements);
     
     // read measurements files and copy to device
-    readMeasurements(measurementsHost, &model, measurementCount);    
-    printMeasurements(measurementsHost, measurementCount);
-    copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, measurementCount);
+    readMeasurements(measurementsHost, model.mDim, model.mDir, numMeasurements); 
+#ifdef ENABLE_LOG   
+    printMeasurements(measurementsHost, numMeasurements);
+#endif
+    copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, numMeasurements);
     
     // fill grid definition (max cells, probability threshold, center, grid width, ...) 
-    GridDefinition gridDefinition;
-    model.configureGrid(&gridDefinition, &measurementsHost[0]);
-    gridDefinition.maxCells = threads * blocks * iterations;
+    GridDefinition gridDefinitionHost;
+    GridDefinition *gridDefinitionDevice;
+    model.configureGrid(&gridDefinitionHost, measurementsHost);
+    gridDefinitionHost.maxCells = threads * blocks * iterations;
+    allocGridDefinitionDevice(&gridDefinitionDevice);
+    initializeGridDefinitionDevice(&gridDefinitionHost, gridDefinitionDevice);
     
     // allocate grid (hashtable, lists, and heap)
     Grid gridHost;
     Grid *gridDevice;        
-    allocGridDevice(gridDefinition.maxCells, &gridHost, &gridDevice);
-    initializeGridDevice(&gridHost, gridDevice, &gridDefinition, &measurementsHost[0]);
+    allocGridDevice(gridDefinitionHost.maxCells, &gridHost, &gridDevice);
+    initializeGridDevice(&gridHost, gridDevice, &gridDefinitionHost, &measurementsHost[0]);
     
     // global memory for kernel
     Global global; // global memory
     global.measurements = measurementsDevice;
     global.grid = gridDevice;
+    global.gridDefinition = gridDefinitionDevice;
     
-    if(autotest){        
-        printf("Launch test kernel\n");        
-        gridTest<<<1,1>>>(gridHost);    
+    if(autotest){  // TODO remove autotest ?      
+        log("Launch test kernel\n");        
+        gridTest<<<1,1>>>(gridHost); 
+        checkKernelError();   
     } else {            
         // check if the block count can fit in the GPU
         size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;        
@@ -148,28 +150,26 @@ static void executeGbees(bool autotest, int measurementCount, int device){
         
         HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
         
-#ifdef ENABLE_LOG        
-        printf("\n -- Launch kernel with %d blocks of %d threads -- \n", blocks, threads);      
-#endif
+        log("\n -- Launch kernel with %d blocks of %d threads -- \n", blocks, threads);      
         
-        void *kernelArgs[] = { &iterations, &gridDefinition, &model, &global };
+        void *kernelArgs[] = { &iterations, &model, &global };
         dim3 dimBlock(threads, 1, 1);
         dim3 dimGrid(blocks, 1, 1);        
         cudaLaunchCooperativeKernel((void*)gbeesKernel, dimGrid, dimBlock, kernelArgs, sharedMemorySize);
+        checkKernelError();
  
         HANDLE_CUDA(cudaFree(global.reductionArray)); 
+        
+        if(model.performRecord){
+            recordResult(gridDevice, &gridDefinitionHost);        
+        }
     }
-    
-    // check kernel error
-    cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            printf("Kernel error: %s\n", cudaGetErrorString(err));
-    }   
-
+  
     cudaDeviceSynchronize();    
 
     // free device memory
     freeGridDevice(&gridHost, gridDevice);
+    freeGridDefinition(gridDefinitionDevice);
     freeMeasurementsDevice(measurementsDevice);
     freeModel(&model);    
     
@@ -178,17 +178,14 @@ static void executeGbees(bool autotest, int measurementCount, int device){
 }
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, GridDefinition, Model, Global), size_t sharedMemory, int device){  
-    // TODO add condition to avoid the check to improve performance
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global), size_t sharedMemory, int device){      
     cudaDeviceProp prop;
     int numBlocksPerSm = 0;
     HANDLE_CUDA(cudaGetDeviceProperties(&prop, device));
     HANDLE_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, kernel, threads, sharedMemory));
     int maxBlocks =  prop.multiProcessorCount * numBlocksPerSm;
     
-#ifdef ENABLE_LOG    
-    printf("- Kernel size check: intended %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
-#endif
+    log("- Kernel size check: intended %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
 
     if(blocks > maxBlocks){        
         handleError(GPU_ERROR, "Error: Required blocks (%d) exceed GPU capacity (%d) for cooperative kernel launch\n", blocks, maxBlocks);

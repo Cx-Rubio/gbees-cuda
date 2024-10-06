@@ -3,7 +3,7 @@
 #ifndef MODELS_H
 #define MODELS_H
 
-#include "gbees.h"
+#include "grid.h"
 #include "measurement.h"
 
 /** Forward declaration*/
