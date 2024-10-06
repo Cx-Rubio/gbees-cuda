@@ -62,7 +62,7 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Prune grid */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, uint32_t* blockSums);
 
 /** Mark the cell for deletion if is negligible */
 static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid);
@@ -132,7 +132,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     cg::grid_group g = cg::this_grid(); 
     
     // shared memory for reduction processes
-    __shared__ double localArray[THREADS_PER_BLOCK];   
+    __shared__ double localArray[THREADS_PER_BLOCK]; // TODO optimize stride in reduction processes  
     
     // get used list offset index
     int offset = getOffset();     
@@ -193,7 +193,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
-                    pruneGrid(offset, iterations, global.gridDefinition, global.grid);
+                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
                     updateIkNodes(offset, iterations, global.grid);    
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                     LOG("post prune active cells %d\n", global.grid->usedSize);
@@ -236,7 +236,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             // TODO check needed sycn
             applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
-            pruneGrid(offset, iterations, global.gridDefinition, global.grid);
+            pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
             updateIkNodes(offset, iterations, global.grid);    
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
         }
@@ -434,7 +434,7 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     
     __syncthreads();
     
-    // reduction process in shared memory (sequencial addressing)
+    // reduction process in shared memory
     for(int s=1;s<blockDim.x;s*=2){
         int indexDst = 2 * s * threadIdx.x;
         int indexSrc = indexDst + s;
@@ -451,7 +451,7 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     
     g.sync();        
      
-    // reduction process in global memory (sequencial addressing)
+    // reduction process in global memory
     for(int s=1;s<gridDim.x;s*=2){
         if(threadIdx.x == 0){       
             int indexDst = 2 * s * blockIdx.x;
@@ -489,7 +489,7 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
     
     __syncthreads();
     
-    // reduction process in shared memory (sequencial addressing)
+    // reduction process in shared memory
     for(int s=1;s<blockDim.x;s*=2){
         int indexDst = 2 * s * threadIdx.x;
         int indexSrc = indexDst + s;
@@ -505,7 +505,7 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
     }
     g.sync();
         
-    // reduction process in global memory (sequencial addressing)   
+    // reduction process in global memory
     for(int s=1;s<gridDim.x;s*=2){
         if(threadIdx.x == 0) {
             int indexDst = 2 * s * blockIdx.x;
@@ -638,6 +638,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
         cell.ctu[i] = 0.0;
     }
         
+    cell.deleted = false;
     cell.prob = 0.0; 
     cell.dcu = 0.0;
     initializeAdv(gridDefinition, model, &cell);
@@ -647,7 +648,13 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 }
 
 /** Prune grid */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid){
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, uint32_t* blockSums){
+    // TODO optimize stride of shared memory
+    // shared memory for scan    
+    __shared__ uint32_t buffers[THREADS_PER_BLOCK * CELLS_PER_THREAD * 2]; // shared memory for scan (double buffer)
+    const int M = THREADS_PER_BLOCK; // size of each block
+    const int N = THREADS_PER_BLOCK * CELLS_PER_THREAD; // size of each buffer
+    
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
   
@@ -655,18 +662,79 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list                    
         markNegligibleCell(usedIndex, gridDefinition, grid);                        
     }
+
+    // load elements into shared memory for local scan (fill first buffer) 
+    for(int iter=0; iter<iterations;iter++) {
+        uint32_t usedIndex = getIndex(offset, iter); // index in the used list  
+        Cell* cell = getCell(usedIndex, grid);
+        buffers[threadIdx.x + iter * THREADS_PER_BLOCK] =
+            (cell != NULL && !cell->deleted) ? 1: 0;     
+    }
     
-    //g.sync();        
-     
-    // TODO implement prune cells
+    __syncthreads();
+    
+    // scan process in shared memory
+    int bufferOut = 0, bufferIn = 1;
+    for(int offset=1; offset<blockDim.x; offset*=2) {   
+        
+        // swap double buffer indices
+        bufferOut = 1 - bufferOut; 
+        bufferIn = 1 - bufferOut;
+        
+        for(int iter=0; iter<iterations;iter++) {
+            int indexIn = bufferIn * N + threadIdx.x + iter * M;
+            int indexOut = bufferOut * N + threadIdx.x + iter * M;
+            if (threadIdx.x >= offset)
+                buffers[indexOut] = buffers[indexIn - offset] + buffers[indexIn];
+            else
+                buffers[indexOut] = buffers[indexIn];
+        }        
+    __syncthreads();
+    }
+    
+    g.sync();
+    
+    // store block sum in global memory
+    if(threadIdx.x == 0) {
+        for(int iter=0; iter<iterations;iter++) {
+            blockSums[blockIdx.x + iter * BLOCKS] = buffers[bufferOut * N + (M-1) + iter * M];
+        }
+    }
+    
+    g.sync();
+    
+    // scan block sums in global memory   
+    int blockSumsOut = 0, blockSumsIn = 1;
+    for(int offset=1; offset<gridDim.x; offset*=2){                
+        if(threadIdx.x == 0) {
+            // swap double buffer indices
+            blockSumsOut = 1 - blockSumsOut; 
+            blockSumsIn = 1 - blockSumsOut;
+            
+            int indexIn = blockSumsIn * gridDim.x + blockIdx.x;
+            int indexOut = blockSumsOut * gridDim.x + blockIdx.x;
+            if (threadIdx.x >= offset)
+                blockSums[indexOut] = blockSums[indexIn - offset] + blockSums[indexIn];
+            else
+                blockSums[indexOut] = blockSums[indexIn];           
+            }
+        g.sync();
+    } 
+    
+    // compact used list
+    for(int iter=0; iter<iterations;iter++) {
+        uint32_t blockSum = blockSums[blockSumsOut * gridDim.x + blockIdx.x];
+        uint32_t threadSum = buffers[bufferOut * N + threadIdx.x + iter * M];
+        uint32_t dstIndex = blockSum + threadSum;
+        uint32_t srcIndex = getIndex(offset, iter);
+        
+        printf("compact, move from %d to %d\n", srcIndex, dstIndex);
+    }
     
 }
 
 /** Mark the cell for deletion if is negligible */
-static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid){  
-    // initialize for not deletion
-    grid->scanBuffer[usedIndex] = 1; 
-  
+static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid){      
     // get cell
     Cell* cell = getCell(usedIndex, grid);
     if(cell == NULL) return;
@@ -685,7 +753,8 @@ static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gr
     }
        
     // mark for deletion
-    grid->scanBuffer[usedIndex] = 0;    
+    cell->deleted = true;
+    printf("marked for deletion cell in usedIndex %d\n", usedIndex);
 }
 
 /** Check id exists significant flux from cell and its edges */

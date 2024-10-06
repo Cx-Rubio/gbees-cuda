@@ -145,10 +145,12 @@ static void executeGbees(bool autotest, int device){
         checkKernelError();   
     } else {            
         // check if the block count can fit in the GPU
-        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK;        
+        size_t sharedMemorySize = sizeof(double) * THREADS_PER_BLOCK + sizeof(uint32_t) * THREADS_PER_BLOCK * CELLS_PER_THREAD * 2;        
         checkCooperativeKernelSize(blocks, threads, gbeesKernel, sharedMemorySize, device);
         
+        // TODO move to fn
         HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
+        HANDLE_CUDA(cudaMalloc(&global.blockSums, blocks * 2 * sizeof(uint32_t)));
         
         log("\n -- Launch kernel with %d blocks of %d threads -- \n", blocks, threads);      
         
@@ -158,7 +160,9 @@ static void executeGbees(bool autotest, int device){
         cudaLaunchCooperativeKernel((void*)gbeesKernel, dimGrid, dimBlock, kernelArgs, sharedMemorySize);
         checkKernelError();
  
+        // TODO move to fn
         HANDLE_CUDA(cudaFree(global.reductionArray)); 
+        HANDLE_CUDA(cudaFree(global.blockSums)); 
         
         if(model.performRecord){
             recordResult(gridDevice, &gridDefinitionHost);        

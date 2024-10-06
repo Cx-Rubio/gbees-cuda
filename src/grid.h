@@ -26,7 +26,8 @@ typedef struct {
 
 /** Cell definition */
 typedef struct Cell Cell;
-struct Cell {    
+struct Cell {   
+    bool deleted;
     double prob;
     double v[DIM];
     double ctu[DIM];
