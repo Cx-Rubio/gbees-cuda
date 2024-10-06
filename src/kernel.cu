@@ -13,8 +13,11 @@ namespace cg = cooperative_groups;
 /** Initialize cells */
 static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDefinition, Model* model, Global* global);
 
-/** Calculate gaussian probability at state x given mean and covariance */
+/** Calculate gaussian probability at state x given mean and covariance (used for first measurement) */
 static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurements);
+
+/** Calculate gaussian probability at state x given mean and covariance (used for update measurement) */
+static __device__ double gaussProbability(double* y, Measurement* measurement);
 
 /** Initialize advection values */
 static __device__ void initializeAdv(GridDefinition* gridDefinition, Model* model, Cell* cell);
@@ -217,6 +220,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             
             if(model.performRecord){ // record PDF
                 LOG("Record PDF (not implemented)\n");
+                // TODO implement snapshoots
             }
             mt += rt;
             
@@ -229,7 +233,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             LOG("\nPERFORMING BAYESIAN UPDATE AT: %f TU...\n\n", tt);
             
             measurement = &global.measurements[nm];
-            
+            // TODO check needed sycn
             applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
             pruneGrid(offset, iterations, global.gridDefinition, global.grid);
@@ -279,7 +283,7 @@ static __device__ void initializeCell(uint32_t usedIndex, GridDefinition* gridDe
     }    
 }
 
-/** Calculate gaussian probability at state x given mean and covariance */
+/** Calculate gaussian probability at state x given mean and covariance (used for first measurement) */
 static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefinition, Measurement* measurement){    
     double mInvX[DIM];
     double diff[DIM];
@@ -289,6 +293,19 @@ static __device__ double gaussProbability(int32_t* key, GridDefinition* gridDefi
     }
     multiplyMatrixVector( (double*)measurement->covInv, diff, mInvX, DIM);
     double dotProduct = computeDotProduct(diff, mInvX, DIM);
+    return exp(-0.5 * dotProduct);
+}
+
+/** Calculate gaussian probability at state x given mean and covariance (used for update measurement) */
+static __device__ double gaussProbability(double* y, Measurement* measurement){    
+    double mInvX[DIM];
+    double diff[DIM];
+    
+    for(int i=0;i<measurement->dim;i++){
+        diff[i] = y[i] - measurement->mean[i];
+    }
+    multiplyMatrixVector( (double*)measurement->covInv, diff, mInvX, measurement->dim);
+    double dotProduct = computeDotProduct(diff, mInvX, measurement->dim);
     return exp(-0.5 * dotProduct);
 }
 
@@ -641,7 +658,7 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     
     //g.sync();        
      
-    // TODO implement
+    // TODO implement prune cells
     
 }
 
@@ -865,12 +882,13 @@ static __device__ void applyMeasurement(int offset, int iterations, Measurement*
 
 /** Apply measurement for one cell */
 static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model){
-    // TODO implement
+    // TODO test apply measurement
     
-    /*double y[DIM];
-    (*h)(y, x, G.dx, T.coef); 
+    // call measurement function
+    double y[DIM];
+    (*model->callbacks->z)(y, cell->x, gridDefinition->dx); 
 
-    double prob = gaussProbability(M.dim, y, M);   
-    r->prob *= prob;
-    */
+    //  compute and update probability
+    double prob = gaussProbability(y, measurement);   
+    cell->prob *= prob;    
 }

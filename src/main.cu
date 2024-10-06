@@ -139,7 +139,7 @@ static void executeGbees(bool autotest, int device){
     global.grid = gridDevice;
     global.gridDefinition = gridDefinitionDevice;
     
-    if(autotest){        
+    if(autotest){  // TODO remove autotest ?      
         log("Launch test kernel\n");        
         gridTest<<<1,1>>>(gridHost); 
         checkKernelError();   
