@@ -26,7 +26,7 @@ static void signalHandler(int signal);
 static void printUsageAndExit(const char* command);
 
 /** Execute GBEES algorithm */
-static void executeGbees(bool autotest, int measurementCount, int device);
+static void executeGbees(bool autotest, int device);
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
 static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global), size_t sharedMemory, int device);
@@ -59,10 +59,9 @@ int main(int argc, char **argv) {
         struct timespec start, end;
         clock_gettime(CLOCK_REALTIME, &start); // start time measurement
 #endif
-    int measurementCount = 2; // TODO read parameter measurement count
-
+    
     // execute GBEES algorithm
-    executeGbees(autotest, measurementCount, device); 
+    executeGbees(autotest, device); 
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
@@ -93,12 +92,12 @@ void signalHandler(int signal){
 
 /** Print usage and exit */
 void printUsageAndExit(const char* command){
-    printf("Usage: %s measuremetsFolder {autotest}\n", command);
+    printf("Usage: %s {autotest}\n", command);
     exit(EXIT_SUCCESS);
 }
 
 /** Execute GBEES algorithm */
-static void executeGbees(bool autotest, int measurementCount, int device){
+static void executeGbees(bool autotest, int device){
     // grid configuration
     int threads = THREADS_PER_BLOCK;
     int blocks = BLOCKS;
@@ -107,22 +106,23 @@ static void executeGbees(bool autotest, int measurementCount, int device){
     // obtain model
     Model model;
     configureLorenz3D(&model);
+    int numMeasurements = model.numMeasurements;
         
     // allocate measurements memory
-    Measurement* measurementsHost = allocMeasurementsHost(measurementCount);
-    Measurement* measurementsDevice = allocMeasurementsDevice(measurementCount);
+    Measurement* measurementsHost = allocMeasurementsHost(numMeasurements);
+    Measurement* measurementsDevice = allocMeasurementsDevice(numMeasurements);
     
     // read measurements files and copy to device
-    readMeasurements(measurementsHost, model.mDim, model.mDir, measurementCount); 
+    readMeasurements(measurementsHost, model.mDim, model.mDir, numMeasurements); 
 #ifdef ENABLE_LOG   
-    printMeasurements(measurementsHost, measurementCount);
+    printMeasurements(measurementsHost, numMeasurements);
 #endif
-    copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, measurementCount);
+    copyHostToDeviceMeasurements(measurementsHost, measurementsDevice, numMeasurements);
     
     // fill grid definition (max cells, probability threshold, center, grid width, ...) 
     GridDefinition gridDefinitionHost;
     GridDefinition *gridDefinitionDevice;
-    model.configureGrid(&gridDefinitionHost, &measurementsHost[0]);
+    model.configureGrid(&gridDefinitionHost, measurementsHost);
     gridDefinitionHost.maxCells = threads * blocks * iterations;
     allocGridDefinitionDevice(&gridDefinitionDevice);
     initializeGridDefinitionDevice(&gridDefinitionHost, gridDefinitionDevice);

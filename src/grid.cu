@@ -64,7 +64,7 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){
     HANDLE_CUDA( cudaMalloc( &grid->usedList, size * sizeof(UsedListEntry) ) );
     HANDLE_CUDA( cudaMalloc( &grid->freeList, size * sizeof(uint32_t) ) );
     HANDLE_CUDA( cudaMalloc( &grid->heap, size * sizeof(Cell) ) );
-    
+    HANDLE_CUDA( cudaMalloc( &grid->scanBuffer, size * sizeof(uint32_t) ) );    
     HANDLE_CUDA( cudaMalloc( gridDevice, sizeof(Grid) ) );    
 }
 
@@ -79,6 +79,7 @@ void freeGridDevice(Grid* grid, Grid* gridDevice){
      HANDLE_CUDA( cudaFree( grid->usedList) ); 
      HANDLE_CUDA( cudaFree( grid->freeList) ); 
      HANDLE_CUDA( cudaFree( grid->heap) ); 
+     HANDLE_CUDA( cudaFree( grid->scanBuffer) ); 
      HANDLE_CUDA( cudaFree( gridDevice) ); 
 }
 
@@ -276,7 +277,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
    
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;
-        if(grid->table[hashIndex].usedIndex != NULL_REFERENCE){            
+        if(grid->table[hashIndex].usedIndex == NULL_REFERENCE){            
             uint32_t usedIndex = grid->usedSize;
             
             // update hashtable
@@ -296,7 +297,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
             Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
             copyCell(cell, dstCell);
             return;
-            }
+        }
     }            
 } 
 

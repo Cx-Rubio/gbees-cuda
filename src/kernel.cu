@@ -62,7 +62,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Mark the cell for deletion if is negligible */
-static __device__ void markNegligibleCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid);
+static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid);
 
 /** Check id exists significant flux from cell and its edges */
 static __device__ bool fluxFrom(Cell* cell, enum Direction direction, int dimension, GridDefinition* gridDefinition, Grid* grid);
@@ -630,18 +630,30 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 }
 
 /** Prune grid */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid){  
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid){
+    // grid synchronization
+    cg::grid_group g = cg::this_grid(); 
+  
     for(int iter=0;iter<iterations;iter++){ 
-        uint32_t usedIndex = getIndex(offset, iter); // index in the used list            
-        Cell* cell = getCell(usedIndex, grid); 
-        if(cell != NULL) {
-            markNegligibleCell(cell, gridDefinition, grid);                
-        }
-    }       
+        uint32_t usedIndex = getIndex(offset, iter); // index in the used list                    
+        markNegligibleCell(usedIndex, gridDefinition, grid);                        
+    }
+    
+    //g.sync();        
+     
+    // TODO implement
+    
 }
 
 /** Mark the cell for deletion if is negligible */
-static __device__ void markNegligibleCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid){    
+static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid){  
+    // initialize for not deletion
+    grid->scanBuffer[usedIndex] = 1; 
+  
+    // get cell
+    Cell* cell = getCell(usedIndex, grid);
+    if(cell == NULL) return;
+    
     // check if its probability is negligible
     if(cell->prob >= gridDefinition->threshold) return;    
     
@@ -656,8 +668,7 @@ static __device__ void markNegligibleCell(Cell* cell, GridDefinition* gridDefini
     }
        
     // mark for deletion
-    //printf("mark for deletion %d,%d,%d\n", cell->state[0], cell->state[1], cell->state[2]);
-    // TODO implement deletion
+    grid->scanBuffer[usedIndex] = 0;    
 }
 
 /** Check id exists significant flux from cell and its edges */
@@ -720,13 +731,6 @@ static __device__ double uMinus(double v){
 }
 
 static __device__ double fluxLimiter(double th) {
-  /** Adrian
-  double min1 = (1.0 + th)/2.0;
-  min1 = fmin(min1, 2.0);
-  min1 = fmax(min1, 2.0*th);
-  return min1; */
-  
-  // original
   double min1 = fmin((1 + th)/2.0, 2.0);
   return fmax(0.0, fmin(min1, 2*th)); 
 }
@@ -741,11 +745,7 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
         double dcu_p = 0;
         double dcu_m = 0;
 
-        /* Original implementation */        
         double vDownstream = cell->v[i];
-
-        /*Corrected implementation (valid only for equispaced meshes) */
-        //double vDownstream = 0.5*(cell->v[i] + kCell->v[i]);	
 	
         if(kCell != NULL){
           dcu_p = uPlus(vDownstream) * cell->prob + uMinus(vDownstream) * kCell->prob;
@@ -861,7 +861,6 @@ static __device__ void applyMeasurement(int offset, int iterations, Measurement*
         applyMeasurementCell(cell, measurement, gridDefinition, grid, model);        
       }
     }
-    
 }
 
 /** Apply measurement for one cell */

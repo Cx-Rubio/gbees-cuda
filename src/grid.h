@@ -7,8 +7,10 @@
 #include "config.h"
 #include "measurement.h"
 
-/** Null reference for i and k nodes */
+/** Null reference for i and k nodes and used index in hashtable */
 #define NULL_REFERENCE UINT32_MAX
+
+/** Reserved hashtable slot */
 #define RESERVED UINT32_MAX-1
 
 /** Grid definition */
@@ -61,6 +63,7 @@ typedef struct {
     uint32_t freeSize;
     uint32_t* freeList; 
     Cell* heap; 
+    uint32_t* scanBuffer; // buffer to perform exclusive-scan in the prune operation
     } Grid;
 
 /** --- Device global memory allocations --- */

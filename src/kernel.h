@@ -11,7 +11,7 @@ typedef struct {
     double* reductionArray; // global array for reduction processes
     Measurement* measurements;
     Grid* grid;
-    GridDefinition* gridDefinition;
+    GridDefinition* gridDefinition;    
 } Global;
 
 /** Time step tolerance */
