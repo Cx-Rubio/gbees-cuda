@@ -42,9 +42,10 @@ struct Cell {
 
 /** Hash table entry */
 typedef struct {
-    int32_t  key[DIM];
-    uint32_t  usedIndex;    
-    uint32_t  hashIndex;    
+    int32_t key[DIM];
+    uint32_t usedIndex;    
+    uint32_t hashIndex;
+    bool deleted;
     } HashTableEntry;
 
 /** Used list entry */
@@ -61,6 +62,7 @@ typedef struct {
     HashTableEntry* table; 
     uint32_t usedSize;
     UsedListEntry* usedList; 
+    UsedListEntry* usedListTemp; // double buffer for compact user list
     uint32_t freeSize;
     uint32_t* freeList; 
     Cell* heap; 

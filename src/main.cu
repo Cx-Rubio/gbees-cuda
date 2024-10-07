@@ -150,7 +150,7 @@ static void executeGbees(bool autotest, int device){
         
         // TODO move to fn
         HANDLE_CUDA(cudaMalloc(&global.reductionArray, blocks * sizeof(double)));
-        HANDLE_CUDA(cudaMalloc(&global.blockSums, blocks * 2 * sizeof(uint32_t)));
+        HANDLE_CUDA(cudaMalloc(&global.blockSums, blocks * iterations * 2 * sizeof(uint32_t)));
         
         log("\n -- Launch kernel with %d blocks of %d threads -- \n", blocks, threads);      
         

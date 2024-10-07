@@ -7,13 +7,13 @@
 #define DIM 3
 
 /** Number of blocks */
-#define BLOCKS 12
+#define BLOCKS 4
 
 /** Number of threads per block */
-#define THREADS_PER_BLOCK 512
+#define THREADS_PER_BLOCK 256
 
 /** Number of cells that process one thread */
-#define CELLS_PER_THREAD 2
+#define CELLS_PER_THREAD 3
 
 /** Enable logs (comment out to disable logs) */
 #define ENABLE_LOG
