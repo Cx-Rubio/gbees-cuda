@@ -517,10 +517,10 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
 }
 
 /** Grow grid */
-static __device__ void growGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){                    
-    for(int iter=0;iter<iterations;iter++){ 
+static __device__ void growGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Model* model){ 
+    for(int iter=0;iter<iterations;iter++){
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list            
-        Cell* cell = getCell(usedIndex, grid);        
+        Cell* cell = getCell(usedIndex, grid);
         growGridFromCell(cell, gridDefinition, grid, model);        
     }                
 }
@@ -528,8 +528,8 @@ static __device__ void growGrid(int offset, int iterations, GridDefinition* grid
 /** Grow grid from one cell */
 static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model){
     // grid synchronization
-    cg::grid_group g = cg::this_grid(); 
-        
+    cg::grid_group g = cg::this_grid();
+    
     bool performGrow = cell != NULL && cell->prob >= gridDefinition->threshold;
     
     if(performGrow) {          
@@ -567,6 +567,7 @@ static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefiniti
         growGridEdges(cell, BACKWARD, BACKWARD, gridDefinition, grid, model);        
     } 
     
+    g.sync(); // synchronization needed to avoid create duplicated cells
 }
 
 /** Grow grid from one cell in one dimension and direction */
