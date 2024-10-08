@@ -41,7 +41,7 @@ struct Cell {
 };
 
 /** Hash table entry */
-typedef struct {
+typedef struct __align__(4) {
     int32_t key[DIM];
     uint32_t usedIndex;    
     uint32_t hashIndex;

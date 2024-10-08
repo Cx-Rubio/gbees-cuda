@@ -315,54 +315,72 @@ __device__ void insertCell(Cell* cell, Grid* grid){
  * @param grid grid pointer
  */
 __device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
-   uint32_t hash = computeHash(cell->state);   
-   uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
-
+    uint32_t hash = computeHash(cell->state);   
+    uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
+    bool exists = false;
+    bool slotAssigned = false;
+    uint32_t existingUsedIndex;
+    uint32_t reservedHashIndex;
+    
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;                
  
-        // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
-        uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);    
-    
-        // return if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
-        if(existingUsedIndex != NULL_REFERENCE && existingUsedIndex != RESERVED){                
-            if(equalState(grid->table[hashIndex].key, cell->state)) return; // if already exits, return
-        }
-       
-        // create a new cell
-        if(existingUsedIndex == NULL_REFERENCE){                                    
-            // check and reserve used list location
-            uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
-
-            if(usedIndex >= grid->size){
-                grid->overflow = true;
-                //return;
-                __trap(); // TODO manage overflow
+        if(!slotAssigned){
+            // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
+            existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
+            if(existingUsedIndex == NULL_REFERENCE){
+                slotAssigned = true;
+                reservedHashIndex = hashIndex;
+                //printf("slot assigned with counter %d, hashIndex %d\n", counter, hashIndex);
             }
-    
-            // update hashtable                
-            copyKey(cell->state,  grid->table[hashIndex].key);  
-            grid->table[hashIndex].hashIndex = hashIndex;            
-            grid->table[hashIndex].usedIndex = usedIndex;
-            grid->table[hashIndex].deleted = false;
-            
-            // reserve one free slot and obtain its index
-            uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
-            
-            // update used list 
-            grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
-            grid->usedList[usedIndex].hashTableIndex = hashIndex;
-            
-            // update heap content
-            Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
-            
-            copyCell(cell, dstCell);
-            
-            //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, hashIndex);
-                    
-            return;
+        } else {
+            existingUsedIndex = grid->table[hashIndex].usedIndex; // not need atomic read if used index is aligned withing 32 bits
+        }
+        
+        // break if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
+        if(existingUsedIndex != NULL_REFERENCE && existingUsedIndex != RESERVED){                
+            if(!grid->table[hashIndex].deleted && equalState(grid->table[hashIndex].key, cell->state)){
+                exists = true;
+                break;
+            } 
         }  
-    }    
+
+        // break if reach end of cluster
+        if(existingUsedIndex == NULL_REFERENCE && !grid->table[hashIndex].deleted) break;        
+    }
+
+    if(!exists && slotAssigned){            
+        // check and reserve used list location
+        uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
+
+        if(usedIndex >= grid->size){
+            grid->overflow = true;
+            //return;
+            __trap(); // TODO manage overflow
+        }
+
+        // update hashtable                
+        copyKey(cell->state,  grid->table[reservedHashIndex].key);  
+        grid->table[reservedHashIndex].hashIndex = reservedHashIndex;            
+        grid->table[reservedHashIndex].usedIndex = usedIndex;
+        grid->table[reservedHashIndex].deleted = false;
+        
+        // reserve one free slot and obtain its index
+        uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
+        
+        // update used list 
+        grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
+        grid->usedList[usedIndex].hashTableIndex = reservedHashIndex;
+        
+        // update heap content
+        Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
+        
+        copyCell(cell, dstCell);        
+        
+        // printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, reservedHashIndex);
+        
+        return;          
+    }
 } 
 
  /**
@@ -415,8 +433,8 @@ __device__ uint32_t findCell(int32_t* state, Grid* grid){
    uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;
-        if(grid->table[hashIndex].usedIndex != NULL_REFERENCE && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
+        uint32_t hashIndex = (hash + counter) % capacity;        
+        if(grid->table[hashIndex].usedIndex != NULL_REFERENCE && !grid->table[hashIndex].deleted && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
             return grid->table[hashIndex].usedIndex;
         }
         if(grid->table[hashIndex].usedIndex == NULL_REFERENCE && !grid->table[hashIndex].deleted) break;
