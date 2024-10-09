@@ -317,71 +317,52 @@ __device__ void insertCell(Cell* cell, Grid* grid){
 __device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
     uint32_t hash = computeHash(cell->state);   
     uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
-    bool exists = false;
-    bool slotAssigned = false;
-    uint32_t existingUsedIndex;
-    uint32_t reservedHashIndex;
     
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;                
- 
-        if(!slotAssigned){
-            // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
-            existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
-            if(existingUsedIndex == NULL_REFERENCE){
-                slotAssigned = true;
-                reservedHashIndex = hashIndex;
-                //printf("slot assigned with counter %d, hashIndex %d\n", counter, hashIndex);
-            }
-        } else {
-            existingUsedIndex = atomicAdd(&grid->table[hashIndex].usedIndex, 0); // TODO not need atomic read if used index is aligned withing 32 bits
-        }
+         
+        // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
+        uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
         
         // break if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
         if(existingUsedIndex != NULL_REFERENCE && existingUsedIndex != RESERVED){                
-            if(!grid->table[hashIndex].deleted && equalState(grid->table[hashIndex].key, cell->state)){
-                exists = true;
-                break;
-            } 
+            if(equalState(grid->table[hashIndex].key, cell->state)) return; // if already exits, return
         }  
 
-        // break if reach end of cluster
-        if(existingUsedIndex == NULL_REFERENCE && !grid->table[hashIndex].deleted) break;        
-    }
+        // create a new cell
+        if(existingUsedIndex == NULL_REFERENCE){
+            // check and reserve used list location
+            uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
 
-    if(!exists && slotAssigned){
-        // check and reserve used list location
-        uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
+            if(usedIndex >= grid->size){
+                grid->overflow = true;
+                return;
+                __trap(); // TODO manage overflow
+            }
 
-        if(usedIndex >= grid->size){
-            grid->overflow = true;
+            // update hashtable                
+            copyKey(cell->state,  grid->table[hashIndex].key);  
+            //grid->table[hashIndex].hashIndex = hashIndex; // TODO HIx
+            grid->table[hashIndex].usedIndex = usedIndex;
+            grid->table[hashIndex].deleted = false;
+            
+            // reserve one free slot and obtain its index
+            uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
+            
+            // update used list 
+            grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
+            grid->usedList[usedIndex].hashTableIndex = hashIndex;
+            
+            // update heap content
+            Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
+            
+            copyCell(cell, dstCell);        
+            
+            //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, hashIndex);                
+            
             return;
-            __trap(); // TODO manage overflow
-        }
-
-        // update hashtable                
-        copyKey(cell->state,  grid->table[reservedHashIndex].key);  
-        //grid->table[reservedHashIndex].hashIndex = reservedHashIndex; // TODO HIx
-        grid->table[reservedHashIndex].usedIndex = usedIndex;
-        grid->table[reservedHashIndex].deleted = false;
-        
-        // reserve one free slot and obtain its index
-        uint32_t freeIndex = atomicDec(&grid->freeSize, UINT32_MAX) - 1;
-        
-        // update used list 
-        grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
-        grid->usedList[usedIndex].hashTableIndex = reservedHashIndex;
-        
-        // update heap content
-        Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
-        
-        copyCell(cell, dstCell);        
-        
-        //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, reservedHashIndex);                
-    } else if(!exists){
-        printf("overflow\n");  
-        // __trap(); // TODO manage overflow              
-    }
+        }     
+    }    
 } 
 
  /**

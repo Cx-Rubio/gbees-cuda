@@ -193,14 +193,15 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
 
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 
-                //LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
+                LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
                     //LOG("## pre prune active cells %d\n", global.grid->usedSize);
-                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
-                    updateIkNodes(offset, iterations, global.grid);    
-                    normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
+                    //pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
+                    //updateIkNodes(offset, iterations, global.grid);    
+                    //normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                     //LOG("## post prune active cells %d\n", global.grid->usedSize);
+return;
                 }
             
                 if ((model.performOutput) && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
@@ -462,7 +463,7 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     }                 
        
     // at the end, the sum of the probability its at globalArray[0]    
-   //LOG("prob sum %1.14e\n", globalArray[0]); // TODO remove    
+   LOG("prob sum %1.14e\n", globalArray[0]); // TODO remove    
     
     // update the probability of the cells
     for(int iter=0;iter<iterations;iter++){
