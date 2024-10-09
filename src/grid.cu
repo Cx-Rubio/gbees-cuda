@@ -60,7 +60,8 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){
     grid->overflow = false;
     grid->usedSize = 0;
     grid->freeSize = 0;    
-    HANDLE_CUDA( cudaMalloc( &grid->table, HASH_TABLE_RATIO * size * sizeof(HashTableEntry) ) );        
+    HANDLE_CUDA( cudaMalloc( &grid->table, HASH_TABLE_RATIO * size * sizeof(HashTableEntry) ) ); 
+    HANDLE_CUDA( cudaMalloc( &grid->tableTemp, HASH_TABLE_RATIO * size * sizeof(HashTableEntry) ) ); 
     HANDLE_CUDA( cudaMalloc( &grid->usedList, size * sizeof(UsedListEntry) ) );
     HANDLE_CUDA( cudaMalloc( &grid->usedListTemp, size * sizeof(UsedListEntry) ) );
     HANDLE_CUDA( cudaMalloc( &grid->freeList, size * sizeof(uint32_t) ) );
@@ -77,6 +78,7 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){
  */
 void freeGridDevice(Grid* grid, Grid* gridDevice){
      HANDLE_CUDA( cudaFree( grid->table) ); 
+     HANDLE_CUDA( cudaFree( grid->tableTemp) ); 
      HANDLE_CUDA( cudaFree( grid->usedList) ); 
      HANDLE_CUDA( cudaFree( grid->usedListTemp) ); 
      HANDLE_CUDA( cudaFree( grid->freeList) ); 
@@ -200,7 +202,7 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
             
             // update hashtable
             hashtable[hashIndex].usedIndex = usedIndex;
-            //hashtable[hashIndex].hashIndex = hashIndex; TODO HIx
+            hashtable[hashIndex].hashIndex = hashIndex;
             copyKey(key,  hashtable[hashIndex].key); 
             hashtable[hashIndex].deleted = false;
             
@@ -286,7 +288,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
             
             // update hashtable
             grid->table[hashIndex].usedIndex = usedIndex;
-            //grid->table[hashIndex].hashIndex = hashIndex; // TODO HIx
+            grid->table[hashIndex].hashIndex = hashIndex;
             copyKey(cell->state,  grid->table[hashIndex].key); 
             grid->table[hashIndex].deleted = false;
             
@@ -342,7 +344,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
 
             // update hashtable                
             copyKey(cell->state,  grid->table[hashIndex].key);  
-            //grid->table[hashIndex].hashIndex = hashIndex; // TODO HIx
+            grid->table[hashIndex].hashIndex = hashIndex;
             grid->table[hashIndex].usedIndex = usedIndex;
             grid->table[hashIndex].deleted = false;
             
@@ -360,6 +362,42 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
             
             //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, hashIndex);                
             
+            return;
+        }     
+    }    
+} 
+
+
+/**
+ * @brief Insert a new hash entry (concurrent version)
+ * do not checks existence with previous cells
+ * 
+ * @param hashEntry new hash table entry pointer
+ * @param table table pointer
+ * @param grid grid pointer
+ */
+__device__ void insertHashConcurrent(HashTableEntry* hashEntry, HashTableEntry* table, Grid* grid){    
+    uint32_t hash = computeHash(hashEntry->key);   
+    uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
+    
+    for(uint32_t counter = 0; counter < capacity; counter++){
+        uint32_t hashIndex = (hash + counter) % capacity;                
+         
+        // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
+        uint32_t existingUsedIndex = atomicCAS( &table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
+        
+        // break if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
+        /*if(existingUsedIndex != NULL_REFERENCE && existingUsedIndex != RESERVED){                
+            if(equalState(table[hashIndex].key, cell->state)) return; // if already exits, return
+        } */ 
+
+        // create a new cell
+        if(existingUsedIndex == NULL_REFERENCE){            
+            // update hashtable                
+            copyKey(hashEntry->key,  table[hashIndex].key);  
+            table[hashIndex].hashIndex = hashIndex;
+            table[hashIndex].usedIndex = hashEntry->usedIndex;
+            table[hashIndex].deleted = false; // TODO redundant with previous initialization            
             return;
         }     
     }    

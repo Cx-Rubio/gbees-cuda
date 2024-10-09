@@ -196,12 +196,12 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
-                    //LOG("## pre prune active cells %d\n", global.grid->usedSize);
-                    //pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
-                    //updateIkNodes(offset, iterations, global.grid);    
-                    //normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
-                    //LOG("## post prune active cells %d\n", global.grid->usedSize);
-return;
+                    LOG("## pre prune active cells %d\n", global.grid->usedSize);
+                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
+                    updateIkNodes(offset, iterations, global.grid);    
+                    normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
+                    LOG("## post prune active cells %d\n", global.grid->usedSize);
+
                 }
             
                 if ((model.performOutput) && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
@@ -210,14 +210,12 @@ return;
                 }
                 
                 stepCount++;            
-                // TODO check needed sycn
-                //g.sync();
-                //if(threadIdx.x == 0 && blockIdx.x == 0) global.gridDefinition->dt = DBL_MAX;                    
-                //g.sync();
                 
+                // TODO check needed sycn
+                g.sync();                               
                 
             } // while(rt < recordTime)
-
+if(count == 20) return; 
             if (((stepCount-1) % model.outputPeriodSteps != 0) || (!model.performOutput)){ // print size to terminal  
                 LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt + mt + rt);
                 LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);
@@ -358,6 +356,12 @@ static __device__ void updateIkNodes(int offset, int iterations, Grid* grid){
     for(int iter=0; iter<iterations; iter++){      
         uint32_t usedIndex = getIndex(offset, iter);
         Cell* cell = getCell(usedIndex, grid);
+        
+        if(cell > grid->heap + grid->size) { 
+            printf("cell pointer invalid %p, limit %p, usedIndex %d, hashindex %d, heapIndex %d, usedSize %d\n", cell, grid->heap + grid->size, usedIndex, grid->usedList[usedIndex].hashTableIndex, grid->usedList[usedIndex].heapIndex, grid->usedSize);                         
+            return;
+        } // FIXME remove
+        
         if(cell != NULL) updateIkNodesCell(cell, grid);
     }
 }
@@ -365,6 +369,7 @@ static __device__ void updateIkNodes(int offset, int iterations, Grid* grid){
 /** Update ik nodes for one cell */
 static __device__ void updateIkNodesCell(Cell* cell, Grid* grid){
     int32_t state[DIM];    
+    
     copyKey(cell->state, state);
     
     for(int dim=0; dim<DIM; dim++){
@@ -642,7 +647,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
     insertCellConcurrent(&cell, grid);
 }
 
-/** Prune grid */
+/** Prune grid TODO move to grid.cu */
 static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, uint32_t* blockSums){
     // TODO optimize stride of shared memory
     // shared memory for scan    
@@ -749,20 +754,50 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     } 
     
     g.sync();
-        
-    // compute new used list size and switch used list buffers
+
+    // rehash, clean temp table
+    for(int i=0; i<iterations; i++){ 
+        uint32_t usedIndex = getIndex(offset, i); // index in the used list                    
+        for(int k=0; k<HASH_TABLE_RATIO;k++){
+            uint32_t hashtableIndex = usedIndex + k * grid->size;
+            grid->tableTemp[hashtableIndex].deleted = false;
+            grid->tableTemp[hashtableIndex].usedIndex = NULL_REFERENCE;
+        }
+    }
+    
+    g.sync();
+
+    // rehash, copy active hash entries
+    for(int i=0; i<iterations; i++){ 
+        uint32_t usedIndex = getIndex(offset, i); // index in the used list                    
+        for(int k=0; k<HASH_TABLE_RATIO;k++){            
+            uint32_t hashtableIndex = usedIndex + k * grid->size;
+            if(!grid->table[hashtableIndex].deleted && grid->table[hashtableIndex].usedIndex != NULL_REFERENCE){ // if active entry
+                insertHashConcurrent(&grid->table[hashtableIndex], grid->tableTemp, grid);
+            }
+        }        
+    }
+
+    g.sync();  
+    
+    // compute new used list size and switch buffers
     if(threadIdx.x == 0 && blockIdx.x == 0) {
         
         // get new used list size from the last block scanned
         grid->usedSize = blockSums[blockSumsOut * BI + BI-1];                    
         
         // switch buffers
-        UsedListEntry* tmp = grid->usedList;
+        UsedListEntry* listPtr = grid->usedList;
         grid->usedList = grid->usedListTemp;
-        grid->usedListTemp = tmp;                
+        grid->usedListTemp = listPtr; 
+
+        // switch buffers
+        HashTableEntry* tablePtr = grid->table;
+        grid->table = grid->tableTemp;
+        grid->tableTemp = tablePtr; 
     }
     
-    g.sync();   
+    g.sync();  
 }
 
 /** Mark the cell for deletion if is negligible */
