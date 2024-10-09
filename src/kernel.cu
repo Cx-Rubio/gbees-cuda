@@ -62,7 +62,7 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Prune grid */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, uint32_t* blockSums);
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global);
 
 /** Mark the cell for deletion if is negligible */
 static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gridDefinition, Grid* grid);
@@ -105,20 +105,56 @@ static __device__ int getOffset();
 
 /** Get index to iterate cells */
 static __device__ uint32_t getIndex(int offset, int iteration);
-	
+
+
+/** --- Device global memory allocations --- */
+
+/**
+ * @brief Alloc global device memory 
+ * 
+ * @param global global struct pointer
+ * @param blocks number of concurrent blocks
+ * @param iterations number of cell processed per thread
+ */
+void allocGlobalDevice(Global* global, int blocks, int iterations){
+    HANDLE_CUDA(cudaMalloc(&global->reductionArray, blocks * sizeof(double)));
+    HANDLE_CUDA(cudaMalloc(&global->blockSums, blocks * iterations * 2 * sizeof(uint32_t)));
+    HANDLE_CUDA(cudaMalloc(&global->blockSumsOut, sizeof(int32_t)));
+}
+
+/**
+ * @brief Free global device memory 
+ *  
+ * @param global global struct pointer
+ */
+void freeGlobalDevice(Global* global){
+    HANDLE_CUDA(cudaFree(global->reductionArray)); 
+    HANDLE_CUDA(cudaFree(global->blockSums)); 
+    HANDLE_CUDA(cudaFree(global->blockSumsOut));
+}
+
+/**
+ * @brief Required shared memory
+ * @return the required shared memory by the kernel
+ */
+size_t requiredSharedMemory(){ // TODO check numbers with the profiler
+    size_t sharedMemoryForReduction = sizeof(double) * THREADS_PER_BLOCK;
+    size_t sharedMemoryForScan = sizeof(uint32_t) * THREADS_PER_BLOCK * CELLS_PER_THREAD * 2;
+    log("Shared memory for reduction %lu\n", sharedMemoryForReduction);
+    log("Shared memory for scan %lu\n", sharedMemoryForScan);    
+    return sharedMemoryForReduction + sharedMemoryForScan;    
+}
+
+/** Main kernel */
     
 /** Get offset index to iterate cells */
-static __device__ int getOffset(){    
-    //return threadIdx.x + blockIdx.x * blockDim.x * CELLS_PER_THREAD;
-    return threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
-    //return blockIdx.x + threadIdx.x * BLOCKS;
+static __device__ int getOffset(){        
+    return threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;    
 }
 
 /** Get used index to iterate cells */
-static __device__ uint32_t getIndex(int offset, int iteration){    
-    //return (uint32_t)(offset + iteration * blockDim.x);
-    return (uint32_t)(offset + iteration * THREADS_PER_BLOCK * BLOCKS);
-    //return (uint32_t)(offset + iteration * THREADS_PER_BLOCK * BLOCKS);
+static __device__ uint32_t getIndex(int offset, int iteration){        
+    return (uint32_t)(offset + iteration * THREADS_PER_BLOCK * BLOCKS);    
 }
 /** 
  * @brief Initialization kernel function 
@@ -184,6 +220,12 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 g.sync();   
 
                 growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
+                
+                if(global.grid->overflow){ // check grid overflow
+                    LOG("Grid capacity exceeded\n");
+                    return;
+                }
+                
                 updateIkNodes(offset, iterations, global.grid);            
                 checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
                 rt += global.gridDefinition->dt;
@@ -197,11 +239,10 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
                     LOG("## pre prune active cells %d\n", global.grid->usedSize);
-                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
+                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
+                    g.sync();LOG("## post prune active cells %d\n", global.grid->usedSize);
                     updateIkNodes(offset, iterations, global.grid);    
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
-                    LOG("## post prune active cells %d\n", global.grid->usedSize);
-
                 }
             
                 if ((model.performOutput) && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
@@ -238,7 +279,7 @@ if(count == 20) return;
             // TODO check needed sycn
             applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
-            pruneGrid(offset, iterations, global.gridDefinition, global.grid, global.blockSums);
+            pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
             updateIkNodes(offset, iterations, global.grid);    
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
         }        
@@ -478,7 +519,6 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     }
 }              
 
-
 /** Set the grid definition bounds with the max and min boundary values of the initial grid cells */
 static __device__ void gridBounds(double* output, double* localArray, double* globalArray, double boundaryValue, double(*fn)(double, double) ){
     // grid synchronization
@@ -551,8 +591,7 @@ static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefiniti
     g.sync(); // synchronization needed to avoid create duplicated cells
     
     if(performGrow) {         
-        growGridEdges(cell,  FORWARD, FORWARD, gridDefinition, grid, model);    
-            
+        growGridEdges(cell,  FORWARD, FORWARD, gridDefinition, grid, model);                
     } 
     
     g.sync(); // synchronization needed to avoid create duplicated cells
@@ -629,7 +668,7 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model){
     Cell cell;
     
-    // TODO optional performane improvement, move initialization to insertCellConcurrent and execute only if cell not exits
+    // TODO optional performance improvement, move initialization to insertCellConcurrent (or use a callback) and execute only if the cell not exits
     
     // compute state
     for(int i=0;i<DIM;i++){
@@ -647,9 +686,9 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
     insertCellConcurrent(&cell, grid);
 }
 
-/** Prune grid TODO move to grid.cu */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, uint32_t* blockSums){
-    // TODO optimize stride of shared memory
+/** Prune grid */
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global){
+    // TODO optimize stride of shared memory, and amout of shared memory used
     // shared memory for scan    
     __shared__ uint32_t buffers[THREADS_PER_BLOCK * CELLS_PER_THREAD * 2]; // shared memory for scan (double buffer)
     const int T = THREADS_PER_BLOCK; // number of threads
@@ -698,17 +737,17 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     // store block sum in global memory    
     if(threadIdx.x == 0) {
         for(int iter=0; iter<iterations;iter++) {
-            blockSums[blockIdx.x + iter * BLOCKS] = buffers[bufferOut * TI + (T-1) + iter * T];            
+            global->blockSums[blockIdx.x + iter * BLOCKS] = buffers[bufferOut * TI + (T-1) + iter * T];            
         }
-    }
-
+    }        
+    
     g.sync();
-                
-    // scan block sums in global memory   
-    int blockSumsOut = 0, blockSumsIn = 1;
+    
+    int32_t blockSumsIn = 1;
+    int32_t blockSumsOut = 0;    
     for(int offset=1; offset< BI ; offset*=2){                
         if(threadIdx.x == 0) {
-            // swap double buffer indices
+            // swap double buffer indices            
             blockSumsOut = 1 - blockSumsOut; 
             blockSumsIn = 1 - blockSumsOut;
                 
@@ -717,50 +756,101 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
                 int indexIn = blockSumsIn * BI + absoluteIndex;
                 int indexOut = blockSumsOut * BI + absoluteIndex;
                 if (absoluteIndex >= offset)
-                    blockSums[indexOut] = blockSums[indexIn - offset] + blockSums[indexIn];                    
+                    global->blockSums[indexOut] = global->blockSums[indexIn - offset] + global->blockSums[indexIn];                    
                 else
-                    blockSums[indexOut] = blockSums[indexIn];                                                   
+                    global->blockSums[indexOut] = global->blockSums[indexIn];                                                   
             }
         }
         g.sync();
     } 
-   
+    
+    if(threadIdx.x == 0 && blockIdx.x == 0){
+        *global->blockSumsOut = blockSumsOut;
+    }
+    
+    g.sync();
+    
+    //g.sync(); LOG("free list size before %d\n", grid->freeSize); // FIXME remove all the block
+    for(int iter=0; iter<iterations;iter++) {
+        uint32_t usedIndex = getIndex(offset, iter); // index in the used list  
+        grid->usedListTemp[usedIndex].heapIndex = NULL_REFERENCE;
+        grid->usedListTemp[usedIndex].hashTableIndex = NULL_REFERENCE;
+        
+    }
+    
+    
+    g.sync(); 
+ 
+ 
+   // FIXME remove all the block    
+   /*
+     g.sync();
+    if(threadIdx.x == 1 && blockIdx.x == 0){
+        printf("block t1 b0 sums: ");
+        for(int i=0;i<BI;i++){
+            printf("%d, ", global->blockSums[*global->blockSumsOut * BI+i]);
+            //printf("blckoutbuff %d\n",*global->blockSumsOut);
+        }    
+        printf("\n");
+    }*/
+    
     // compact used list in usedListTemp and update free list
     for(int iter=0; iter<iterations;iter++) {
         int absoluteIndex = iter * BLOCKS  + blockIdx.x; // absolute index in the block sums
-        uint32_t blockSum = (absoluteIndex > 0)? blockSums[blockSumsOut * BI + absoluteIndex-1] : 0; // get the sum of the previous block
+        uint32_t blockSum = (absoluteIndex > 0)? global->blockSums[*global->blockSumsOut * BI + (absoluteIndex-1) ] : 0; // get the sum of the previous block
+        
+        /*if(threadIdx.x == 4){
+                printf("thread %d, block %d, absoluteIndex %d, blockSum %d <> %d\n", threadIdx.x, blockIdx.x, absoluteIndex, blockSum, global->blockSums[*global->blockSumsOut * BI +22]);
+        }*/
+        
         uint32_t threadSum = buffers[bufferOut * TI + threadIdx.x + iter * T];
         uint32_t dstIndex = blockSum + threadSum - 1; // minus one because the scan in shared memory is inclusive
         uint32_t srcIndex = getIndex(offset, iter);        
         
         Cell* cell = getCell(srcIndex, grid);
+        
+        
+        /*if(dstIndex > 4500){ // FIXME remove
+            printf("try src, dst %d, %d, absIndex %d\n", srcIndex, dstIndex, absoluteIndex);            
+        }*/
+        
         if(cell != NULL){
             uint32_t hashtableIndex = grid->usedList[srcIndex].hashTableIndex;
             
             if(cell->deleted){                
                 // deleted cell                
                 uint32_t freeIndex = atomicAdd(&grid->freeSize, 1);  // check and reserve free list location
-                grid->freeList[freeIndex] = cell - grid->heap;  // add heap index to the free list
-                grid->table[hashtableIndex].deleted = true; // mark deleted in hashtable
+                grid->freeList[freeIndex] = cell - grid->heap;  // add heap index to the free list                
                 grid->table[hashtableIndex].usedIndex = NULL_REFERENCE; // update hashtable used index
             }  else {
                 // not deleted cell, compact in usedList               
                 grid->usedListTemp[dstIndex].heapIndex = grid->usedList[srcIndex].heapIndex;
                 grid->usedListTemp[dstIndex].hashTableIndex = hashtableIndex;    
-                grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index
-                grid->table[hashtableIndex].deleted = false; // mark not deleted in hashtable // TODO redundant
+                grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index   
+
+                /*if(dstIndex > 4500){ // FIXME remove
+                    printf("move from %d, to %d,heap index %d\n", srcIndex, dstIndex, grid->usedList[srcIndex].heapIndex);
+                }*/
             }
         }        
-    } 
+    }     
     
-    g.sync();
-
+  /*
+     g.sync();// FIXME remove all the block
+    if(threadIdx.x == 0 && blockIdx.x == 0){
+        printf("block sums afetr: ");
+        for(int i=0;i<BI;i++){
+            printf("%d, ", global->blockSums[*global->blockSumsOut * BI + i]);
+        }    
+        printf("\n");
+    }*/
+    
+  g.sync();
     // rehash, clean temp table
     for(int i=0; i<iterations; i++){ 
         uint32_t usedIndex = getIndex(offset, i); // index in the used list                    
         for(int k=0; k<HASH_TABLE_RATIO;k++){
-            uint32_t hashtableIndex = usedIndex + k * grid->size;
-            grid->tableTemp[hashtableIndex].deleted = false;
+            uint32_t hashtableIndex = usedIndex + k * grid->size;            
             grid->tableTemp[hashtableIndex].usedIndex = NULL_REFERENCE;
         }
     }
@@ -772,7 +862,7 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
         uint32_t usedIndex = getIndex(offset, i); // index in the used list                    
         for(int k=0; k<HASH_TABLE_RATIO;k++){            
             uint32_t hashtableIndex = usedIndex + k * grid->size;
-            if(!grid->table[hashtableIndex].deleted && grid->table[hashtableIndex].usedIndex != NULL_REFERENCE){ // if active entry
+            if(grid->table[hashtableIndex].usedIndex != NULL_REFERENCE){ // if active entry
                 insertHashConcurrent(&grid->table[hashtableIndex], grid->tableTemp, grid);
             }
         }        
@@ -784,7 +874,7 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     if(threadIdx.x == 0 && blockIdx.x == 0) {
         
         // get new used list size from the last block scanned
-        grid->usedSize = blockSums[blockSumsOut * BI + BI-1];                    
+        grid->usedSize = global->blockSums[*global->blockSumsOut * BI + BI-1];                    
         
         // switch buffers
         UsedListEntry* listPtr = grid->usedList;

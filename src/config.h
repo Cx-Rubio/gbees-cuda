@@ -7,7 +7,7 @@
 #define DIM 3
 
 /** Number of blocks */
-#define BLOCKS 12
+#define BLOCKS 24
 
 /** Number of threads per block */
 #define THREADS_PER_BLOCK 256

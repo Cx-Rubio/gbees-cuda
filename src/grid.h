@@ -44,8 +44,7 @@ struct Cell {
 typedef struct __align__(4) {
     int32_t key[DIM];
     uint32_t usedIndex;    
-    uint32_t hashIndex;    
-    //bool deleted;
+    uint32_t hashIndex;        
     } HashTableEntry;
 
 /** Used list entry */
