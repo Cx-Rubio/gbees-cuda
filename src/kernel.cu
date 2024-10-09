@@ -742,7 +742,7 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
                 grid->usedListTemp[dstIndex].heapIndex = grid->usedList[srcIndex].heapIndex;
                 grid->usedListTemp[dstIndex].hashTableIndex = hashtableIndex;    
                 grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index
-                grid->table[hashtableIndex].deleted = false; // mark not deleted in hashtable
+                grid->table[hashtableIndex].deleted = false; // mark not deleted in hashtable // TODO redundant
             }
         }        
     } 

@@ -200,7 +200,7 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
             
             // update hashtable
             hashtable[hashIndex].usedIndex = usedIndex;
-            hashtable[hashIndex].hashIndex = hashIndex;
+            //hashtable[hashIndex].hashIndex = hashIndex; TODO HIx
             copyKey(key,  hashtable[hashIndex].key); 
             hashtable[hashIndex].deleted = false;
             
@@ -286,7 +286,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
             
             // update hashtable
             grid->table[hashIndex].usedIndex = usedIndex;
-            grid->table[hashIndex].hashIndex = hashIndex;
+            //grid->table[hashIndex].hashIndex = hashIndex; // TODO HIx
             copyKey(cell->state,  grid->table[hashIndex].key); 
             grid->table[hashIndex].deleted = false;
             
@@ -326,7 +326,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
         uint32_t hashIndex = (hash + counter) % capacity;                
  
         if(!slotAssigned){
-            // check if the hashtable slot is free. If is free reserve with the UINT32_MAX value, if not free obtain the current used index
+            // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
             existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
             if(existingUsedIndex == NULL_REFERENCE){
                 slotAssigned = true;
@@ -334,7 +334,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
                 //printf("slot assigned with counter %d, hashIndex %d\n", counter, hashIndex);
             }
         } else {
-            existingUsedIndex = grid->table[hashIndex].usedIndex; // not need atomic read if used index is aligned withing 32 bits
+            existingUsedIndex = atomicAdd(&grid->table[hashIndex].usedIndex, 0); // TODO not need atomic read if used index is aligned withing 32 bits
         }
         
         // break if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
@@ -349,19 +349,19 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
         if(existingUsedIndex == NULL_REFERENCE && !grid->table[hashIndex].deleted) break;        
     }
 
-    if(!exists && slotAssigned){            
+    if(!exists && slotAssigned){
         // check and reserve used list location
         uint32_t usedIndex = atomicAdd(&grid->usedSize, 1);   
 
         if(usedIndex >= grid->size){
             grid->overflow = true;
-            //return;
+            return;
             __trap(); // TODO manage overflow
         }
 
         // update hashtable                
         copyKey(cell->state,  grid->table[reservedHashIndex].key);  
-        grid->table[reservedHashIndex].hashIndex = reservedHashIndex;            
+        //grid->table[reservedHashIndex].hashIndex = reservedHashIndex; // TODO HIx
         grid->table[reservedHashIndex].usedIndex = usedIndex;
         grid->table[reservedHashIndex].deleted = false;
         
@@ -377,9 +377,10 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
         
         copyCell(cell, dstCell);        
         
-        // printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, reservedHashIndex);
-        
-        return;          
+        //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, reservedHashIndex);                
+    } else if(!exists){
+        printf("overflow\n");  
+        // __trap(); // TODO manage overflow              
     }
 } 
 
