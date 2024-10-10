@@ -202,7 +202,7 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
             // update hashtable
             hashtable[hashIndex].usedIndex = usedIndex;
             hashtable[hashIndex].hashIndex = hashIndex;
-            copyKey(key,  hashtable[hashIndex].key);            
+            copyKey(key, hashtable[hashIndex].key);
             
             // update used list 
             usedList[usedIndex].heapIndex = usedIndex;
@@ -353,10 +353,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
             // update heap content
             Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
             
-            copyCell(cell, dstCell);        
-            
-            //printf("new cell [%d, %d, %d], usedIndex %d, hash %d hashIndex %d\n",cell->state[0],cell->state[1],cell->state[2], usedIndex, hash, hashIndex);                
-            
+            copyCell(cell, dstCell);             
             return;
         }     
     }    
@@ -373,25 +370,25 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
  */
 __device__ void insertHashConcurrent(HashTableEntry* hashEntry, HashTableEntry* table, Grid* grid){    
     uint32_t hash = computeHash(hashEntry->key);   
-    uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
+    uint32_t capacity = HASH_TABLE_RATIO * grid->size;      
+    uint32_t newUsedIndex = hashEntry->usedIndex;
     
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;                
          
         // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
-        uint32_t existingUsedIndex = atomicCAS( &table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
-        
-        // break if the existing cell is the same as the new cell (notice that could not check concurrent inserts)
-        /*if(existingUsedIndex != NULL_REFERENCE && existingUsedIndex != RESERVED){                
-            if(equalState(table[hashIndex].key, cell->state)) return; // if already exits, return
-        } */ 
-
-        // create a new cell
+        uint32_t existingUsedIndex = atomicCAS( &table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);        
+    
+        // create a new hash entry
         if(existingUsedIndex == NULL_REFERENCE){            
             // update hashtable                
             copyKey(hashEntry->key,  table[hashIndex].key);  
             table[hashIndex].hashIndex = hashIndex;
-            table[hashIndex].usedIndex = hashEntry->usedIndex;            
+            table[hashIndex].usedIndex = newUsedIndex; 
+            
+            // update usedEntry with the new hash
+            grid->usedList[newUsedIndex].hashTableIndex = hashIndex;
+                
             return;
         }     
     }    

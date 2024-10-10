@@ -238,9 +238,9 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
-                    LOG("## pre prune active cells %d\n", global.grid->usedSize);
+                    //g.sync(); LOG("## pre prune active cells %d\n", global.grid->usedSize); g.sync();
                     pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
-                    g.sync();LOG("## post prune active cells %d\n", global.grid->usedSize);
+                    //g.sync();LOG("## post prune active cells %d\n", global.grid->usedSize); g.sync();
                     updateIkNodes(offset, iterations, global.grid);    
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 }
@@ -396,13 +396,7 @@ static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIn
 static __device__ void updateIkNodes(int offset, int iterations, Grid* grid){
     for(int iter=0; iter<iterations; iter++){      
         uint32_t usedIndex = getIndex(offset, iter);
-        Cell* cell = getCell(usedIndex, grid);
-        
-        if(cell > grid->heap + grid->size) { 
-            printf("cell pointer invalid %p, limit %p, usedIndex %d, hashindex %d, heapIndex %d, usedSize %d\n", cell, grid->heap + grid->size, usedIndex, grid->usedList[usedIndex].hashTableIndex, grid->usedList[usedIndex].heapIndex, grid->usedSize);                         
-            return;
-        } // FIXME remove
-        
+        Cell* cell = getCell(usedIndex, grid);                
         if(cell != NULL) updateIkNodesCell(cell, grid);
     }
 }
@@ -416,7 +410,7 @@ static __device__ void updateIkNodesCell(Cell* cell, Grid* grid){
     for(int dim=0; dim<DIM; dim++){
         // node i        
         state[dim] -= 1; // to reach -1
-        cell->iNodes[dim] = findCell(state, grid);        
+        cell->iNodes[dim] = findCell(state, grid); 
             
         // node k        
         state[dim] += 2; // to reach +1
@@ -769,51 +763,25 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     }
     
     g.sync();
-    
-    //g.sync(); LOG("free list size before %d\n", grid->freeSize); // FIXME remove all the block
+        
     for(int iter=0; iter<iterations;iter++) {
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list  
         grid->usedListTemp[usedIndex].heapIndex = NULL_REFERENCE;
-        grid->usedListTemp[usedIndex].hashTableIndex = NULL_REFERENCE;
-        
+        grid->usedListTemp[usedIndex].hashTableIndex = NULL_REFERENCE;        
     }
     
-    
     g.sync(); 
- 
- 
-   // FIXME remove all the block    
-   /*
-     g.sync();
-    if(threadIdx.x == 1 && blockIdx.x == 0){
-        printf("block t1 b0 sums: ");
-        for(int i=0;i<BI;i++){
-            printf("%d, ", global->blockSums[*global->blockSumsOut * BI+i]);
-            //printf("blckoutbuff %d\n",*global->blockSumsOut);
-        }    
-        printf("\n");
-    }*/
     
     // compact used list in usedListTemp and update free list
     for(int iter=0; iter<iterations;iter++) {
         int absoluteIndex = iter * BLOCKS  + blockIdx.x; // absolute index in the block sums
-        uint32_t blockSum = (absoluteIndex > 0)? global->blockSums[*global->blockSumsOut * BI + (absoluteIndex-1) ] : 0; // get the sum of the previous block
-        
-        /*if(threadIdx.x == 4){
-                printf("thread %d, block %d, absoluteIndex %d, blockSum %d <> %d\n", threadIdx.x, blockIdx.x, absoluteIndex, blockSum, global->blockSums[*global->blockSumsOut * BI +22]);
-        }*/
-        
+        uint32_t blockSum = (absoluteIndex > 0)? global->blockSums[*global->blockSumsOut * BI + (absoluteIndex-1) ] : 0; // get the sum of the previous block                
         uint32_t threadSum = buffers[bufferOut * TI + threadIdx.x + iter * T];
         uint32_t dstIndex = blockSum + threadSum - 1; // minus one because the scan in shared memory is inclusive
         uint32_t srcIndex = getIndex(offset, iter);        
         
         Cell* cell = getCell(srcIndex, grid);
-        
-        
-        /*if(dstIndex > 4500){ // FIXME remove
-            printf("try src, dst %d, %d, absIndex %d\n", srcIndex, dstIndex, absoluteIndex);            
-        }*/
-        
+                        
         if(cell != NULL){
             uint32_t hashtableIndex = grid->usedList[srcIndex].hashTableIndex;
             
@@ -826,26 +794,24 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
                 // not deleted cell, compact in usedList               
                 grid->usedListTemp[dstIndex].heapIndex = grid->usedList[srcIndex].heapIndex;
                 grid->usedListTemp[dstIndex].hashTableIndex = hashtableIndex;    
-                grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index   
-
-                /*if(dstIndex > 4500){ // FIXME remove
-                    printf("move from %d, to %d,heap index %d\n", srcIndex, dstIndex, grid->usedList[srcIndex].heapIndex);
-                }*/
+                grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index             
             }
         }        
     }     
     
-  /*
-     g.sync();// FIXME remove all the block
-    if(threadIdx.x == 0 && blockIdx.x == 0){
-        printf("block sums afetr: ");
-        for(int i=0;i<BI;i++){
-            printf("%d, ", global->blockSums[*global->blockSumsOut * BI + i]);
-        }    
-        printf("\n");
-    }*/
+    // compute new used list size and switch buffers
+    if(threadIdx.x == 0 && blockIdx.x == 0) {      
+        // get new used list size from the last block scanned
+        grid->usedSize = global->blockSums[*global->blockSumsOut * BI + BI-1];                    
+        
+        // switch buffers
+        UsedListEntry* listPtr = grid->usedList;
+        grid->usedList = grid->usedListTemp;
+        grid->usedListTemp = listPtr; 
+    }
     
-  g.sync();
+    g.sync();
+    
     // rehash, clean temp table
     for(int i=0; i<iterations; i++){ 
         uint32_t usedIndex = getIndex(offset, i); // index in the used list                    
@@ -870,17 +836,8 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
 
     g.sync();  
     
-    // compute new used list size and switch buffers
-    if(threadIdx.x == 0 && blockIdx.x == 0) {
-        
-        // get new used list size from the last block scanned
-        grid->usedSize = global->blockSums[*global->blockSumsOut * BI + BI-1];                    
-        
-        // switch buffers
-        UsedListEntry* listPtr = grid->usedList;
-        grid->usedList = grid->usedListTemp;
-        grid->usedListTemp = listPtr; 
-
+    // switch hashtable buffers
+    if(threadIdx.x == 0 && blockIdx.x == 0) {        
         // switch buffers
         HashTableEntry* tablePtr = grid->table;
         grid->table = grid->tableTemp;
@@ -898,7 +855,7 @@ static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gr
     
     // check if its probability is negligible
     if(cell->prob >= gridDefinition->threshold) return;    
-    
+        
     for(int i=0;i<DIM;i++){
         // look backwards node
         Cell* iCell = getCell(cell->iNodes[i], grid);
@@ -908,9 +865,9 @@ static __device__ void markNegligibleCell(uint32_t usedIndex, GridDefinition* gr
         Cell* kCell = getCell(cell->kNodes[i], grid);
         if( fluxFrom(kCell, BACKWARD, i, gridDefinition, grid) ) return;        
     }
-       
+    
     // mark for deletion
-    cell->deleted = true;          
+    cell->deleted = true;           
 }
 
 /** Check id exists significant flux from cell and its edges */
@@ -1007,18 +964,19 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
 static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {         
  
     for(int i=0; i<DIM; i++){
-        Cell* iCell = getCell(cell->iNodes[i], grid);
-        if(iCell == NULL) continue;    
-        double flux = gridDef->dt*(cell->prob - iCell->prob) / (2.0 * gridDef->dx[i]);            
+        Cell* iCell = getCell(cell->iNodes[i], grid);    
         
+        if(iCell == NULL) continue;    
+        
+        double flux = gridDef->dt*(cell->prob - iCell->prob) / (2.0 * gridDef->dx[i]);                    
         double vUpstream = iCell->v[i];
-
+       
         for(int j=0; j<DIM; j++){
             if(j == i) continue;
             
             Cell* jCell = getCell(cell->iNodes[j], grid);
             Cell* pCell = getCell(iCell->iNodes[j], grid);
-
+            
             atomicAdd(&cell->ctu[j], -uPlus(vUpstream) * uPlus(cell->v[j]) * flux);
             atomicAdd(&iCell->ctu[j], -uMinus(vUpstream) * uPlus(iCell->v[j]) * flux);
                 
@@ -1027,9 +985,9 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
             }
             if(pCell != NULL){
                 atomicAdd(&pCell->ctu[j], -uMinus(vUpstream) * uMinus(pCell->v[j]) * flux);                
-            }        
+            }
         }
-    
+  
 	    //High-resolution correction terms
         double th = 0.0;
         if (vUpstream > 0){
@@ -1045,7 +1003,7 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
                 (-cell->prob)/(cell->prob - iCell->prob);                             
         }       
         atomicAdd(&iCell->ctu[i], fabs(vUpstream)*(gridDef->dx[i]/gridDef->dt - fabs(vUpstream))*flux*fluxLimiter(th));         
-    }
+    }   
 }
 
 /** Update probability for one cell */
@@ -1068,10 +1026,10 @@ static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinit
         Cell* iCell = getCell(cell->iNodes[i], grid);
         cell->prob -= (iCell != NULL)?
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
-            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);          
+            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);         
     }    
     
-    cell->prob = fmax(cell->prob, 0.0);    
+    cell->prob = fmax(cell->prob, 0.0);        
 }
 
 /** Apply measurement */
