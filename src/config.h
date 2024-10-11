@@ -10,7 +10,7 @@
 #define BLOCKS 24
 
 /** Number of threads per block */
-#define THREADS_PER_BLOCK 256
+#define THREADS_PER_BLOCK 512
 
 /** Number of cells that process one thread */
 #define CELLS_PER_THREAD 2

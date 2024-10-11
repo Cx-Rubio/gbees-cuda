@@ -192,16 +192,20 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     // normalize distribution
     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
    
-    // for each measurement
+    
+    // select first measurement
+    Measurement* measurement = &global.measurements[0];
+        
     double tt = 0.0;
-    for(int nm=0;nm<model.numMeasurements;nm++){
+    
+    // for each measurement
+    for(int nm=0; nm<model.numMeasurements; nm++){
         int stepCount = 1; // step count
         
-        LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
-        LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);        
-        
-        // select active measurement
-        Measurement* measurement = &global.measurements[nm];
+        if(model.performOutput){
+            LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
+            LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);                
+        }
         
         // propagate probability distribution until the next measurement
         double mt = 0.0; // time propagated from the last measurement            
@@ -211,7 +215,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         
         int count = 0; // FIXME remove
         
-        while(fabs(mt - measurement->T) > TOL) {              
+        while(fabs(mt - measurement->T) > TOL) {
             rt = 0.0;
            
             while(rt < recordTime) { // time between PDF recordings      
@@ -226,16 +230,21 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                     return;
                 }
                 
-                updateIkNodes(offset, iterations, global.grid);            
+                updateIkNodes(offset, iterations, global.grid);                      
                 checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
+                                
+                if(threadIdx.x == 0 && blockIdx.x == 0){
+                    global.gridDefinition->dt = fmin(global.gridDefinition->dt, recordTime - rt);
+                }
+                g.sync();
+                
                 rt += global.gridDefinition->dt;
                 godunovMethod(offset, iterations, global.gridDefinition, global.grid);
                 g.sync();            
                 updateProbability(offset, iterations, global.gridDefinition, global.grid);                
-
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 
-                LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
+                //LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
                     //g.sync(); LOG("## pre prune active cells %d\n", global.grid->usedSize); g.sync();
@@ -245,38 +254,36 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 }
             
-                if ((model.performOutput) && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
+                if (model.performOutput && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
                     LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt + mt + rt);
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
                 
-                stepCount++;            
-                
-                // TODO check needed sycn
-                g.sync();                               
-                
+                stepCount++;                                            
             } // while(rt < recordTime)
-if(count == 20) return; 
-            if (((stepCount-1) % model.outputPeriodSteps != 0) || (!model.performOutput)){ // print size to terminal  
-                LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt + mt + rt);
+
+            if (((stepCount-1) % model.outputPeriodSteps != 0) && model.performOutput){ // print size to terminal  
+                LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount-1, tt + mt + rt);
                 LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);
             }
             
             if(model.performRecord){ // record PDF
                 LOG("Record PDF (not implemented)\n");
                 // TODO implement snapshoots
-            }
+            }            
             mt += rt;
         }
     
         tt += mt;
         // perform Bayesian update for the next measurement
         if(model.performMeasure && nm < model.numMeasurements -1){
+            if(model.performOutput){
+                LOG("\nPERFORMING BAYESIAN UPDATE AT: %f TU...\n\n", tt);
+            }
             
-            LOG("\nPERFORMING BAYESIAN UPDATE AT: %f TU...\n\n", tt);
+            // select next measurement
+            measurement = &global.measurements[nm+1];            
             
-            measurement = &global.measurements[nm];
-            // TODO check needed sycn
             applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
             pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
@@ -346,6 +353,7 @@ static __device__ double gaussProbability(double* y, Measurement* measurement){
     for(int i=0;i<measurement->dim;i++){
         diff[i] = y[i] - measurement->mean[i];
     }
+    
     multiplyMatrixVector( (double*)measurement->covInv, diff, mInvX, measurement->dim);
     double dotProduct = computeDotProduct(diff, mInvX, measurement->dim);
     return exp(-0.5 * dotProduct);
@@ -503,7 +511,7 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     }                 
        
     // at the end, the sum of the probability its at globalArray[0]    
-   LOG("prob sum %1.14e\n", globalArray[0]); // TODO remove    
+   //LOG("prob sum %1.14e\n", globalArray[0]);
     
     // update the probability of the cells
     for(int iter=0;iter<iterations;iter++){
@@ -511,6 +519,8 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
         Cell* cell = getCell(usedIndex, grid);         
         if(cell != NULL) cell->prob /= globalArray[0];        
     }
+    
+    g.sync();
 }              
 
 /** Set the grid definition bounds with the max and min boundary values of the initial grid cells */
@@ -794,10 +804,12 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
                 // not deleted cell, compact in usedList               
                 grid->usedListTemp[dstIndex].heapIndex = grid->usedList[srcIndex].heapIndex;
                 grid->usedListTemp[dstIndex].hashTableIndex = hashtableIndex;    
-                grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index             
+                grid->table[hashtableIndex].usedIndex = dstIndex; // update hashtable used index
             }
         }        
     }     
+    
+    g.sync();
     
     // compute new used list size and switch buffers
     if(threadIdx.x == 0 && blockIdx.x == 0) {      
@@ -1051,8 +1063,8 @@ static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement
     // call measurement function
     double y[DIM];
     (*model->callbacks->z)(y, cell->x, gridDefinition->dx); 
-
+    
     //  compute and update probability
     double prob = gaussProbability(y, measurement);   
-    cell->prob *= prob;    
+    cell->prob *= prob;
 }
