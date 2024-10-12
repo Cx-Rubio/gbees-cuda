@@ -9,6 +9,7 @@
 /** Global working memory */
 typedef struct {
     double* reductionArray; // global array for reduction processes
+    uint32_t* threadSums; // to store scan block values
     uint32_t* blockSums; // double buffer to store scan block totals
     int32_t* blockSumsOut; // buffer selected at the end of the scan process
     Measurement* measurements;

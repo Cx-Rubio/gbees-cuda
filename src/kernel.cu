@@ -118,6 +118,7 @@ static __device__ uint32_t getIndex(int offset, int iteration);
  */
 void allocGlobalDevice(Global* global, int blocks, int iterations){
     HANDLE_CUDA(cudaMalloc(&global->reductionArray, blocks * sizeof(double)));
+    HANDLE_CUDA(cudaMalloc(&global->threadSums, THREADS_PER_BLOCK * blocks * iterations * sizeof(uint32_t)));
     HANDLE_CUDA(cudaMalloc(&global->blockSums, blocks * iterations * 2 * sizeof(uint32_t)));
     HANDLE_CUDA(cudaMalloc(&global->blockSumsOut, sizeof(int32_t)));
 }
@@ -129,6 +130,7 @@ void allocGlobalDevice(Global* global, int blocks, int iterations){
  */
 void freeGlobalDevice(Global* global){
     HANDLE_CUDA(cudaFree(global->reductionArray)); 
+    HANDLE_CUDA(cudaFree(global->threadSums)); 
     HANDLE_CUDA(cudaFree(global->blockSums)); 
     HANDLE_CUDA(cudaFree(global->blockSumsOut));
 }
@@ -139,7 +141,7 @@ void freeGlobalDevice(Global* global){
  */
 size_t requiredSharedMemory(){ // TODO check numbers with the profiler
     size_t sharedMemoryForReduction = sizeof(double) * THREADS_PER_BLOCK;
-    size_t sharedMemoryForScan = sizeof(uint32_t) * THREADS_PER_BLOCK * CELLS_PER_THREAD * 2;
+    size_t sharedMemoryForScan = sizeof(uint32_t) * THREADS_PER_BLOCK * 2;
     log("Shared memory for reduction %lu\n", sharedMemoryForReduction);
     log("Shared memory for scan %lu\n", sharedMemoryForScan);    
     return sharedMemoryForReduction + sharedMemoryForScan;    
@@ -690,10 +692,11 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global){
     // TODO optimize stride of shared memory, and amout of shared memory used
     // shared memory for scan    
-    __shared__ uint32_t buffers[THREADS_PER_BLOCK * CELLS_PER_THREAD * 2]; // shared memory for scan (double buffer)
+    __shared__ uint32_t buffers[THREADS_PER_BLOCK * 2]; // shared memory for scan (double buffer)
     const int T = THREADS_PER_BLOCK; // number of threads
-    const int TI = THREADS_PER_BLOCK * CELLS_PER_THREAD; // number of threads per number of iterations
+    //const int TI = THREADS_PER_BLOCK * CELLS_PER_THREAD; // number of threads per number of iterations
     const int BI = BLOCKS * CELLS_PER_THREAD; // number of blocks per number of iterations
+    const int TB = THREADS_PER_BLOCK * BLOCKS; // number of blocks per number of iterations
     
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
@@ -702,44 +705,45 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list                    
         markNegligibleCell(usedIndex, gridDefinition, grid);                        
     }
-
-    // load elements into shared memory for local scan (fill first buffer) 
+    
+    // scan process in shared memory    
     for(int iter=0; iter<iterations;iter++) {
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list  
+        
+        // load elements into shared memory for local scan (fill first buffer) 
+        
         Cell* cell = getCell(usedIndex, grid);
-        buffers[threadIdx.x + iter * T] =
-            (cell != NULL && !cell->deleted) ? 1: 0;     
-    }
-    
-    __syncthreads();
-    
-    // scan process in shared memory
-    int bufferOut = 0, bufferIn = 1;
-    for(int offset=1; offset<blockDim.x; offset*=2) {   
+        buffers[threadIdx.x] = (cell != NULL && !cell->deleted) ? 1: 0;                 
         
-        // swap double buffer indices
-        bufferOut = 1 - bufferOut; 
-        bufferIn = 1 - bufferOut;
-        
-        for(int iter=0; iter<iterations;iter++) {
-            int indexIn = bufferIn * TI + threadIdx.x + iter * T;
-            int indexOut = bufferOut * TI + threadIdx.x + iter * T;
+        __syncthreads();
+            
+        // scan process in shared memory
+        int bufferOut = 0, bufferIn = 1;
+        for(int offset=1; offset<blockDim.x; offset*=2) {   
+            
+            // swap double buffer indices
+            bufferOut = 1 - bufferOut; 
+            bufferIn = 1 - bufferOut;
+            
+            int indexIn = bufferIn * T + threadIdx.x;
+            int indexOut = bufferOut * T + threadIdx.x;
             if (threadIdx.x >= offset)
                 buffers[indexOut] = buffers[indexIn - offset] + buffers[indexIn];
             else
                 buffers[indexOut] = buffers[indexIn];
-        }        
-    __syncthreads();
-    }
-    
-    g.sync();  
-    
-    // store block sum in global memory    
-    if(threadIdx.x == 0) {
-        for(int iter=0; iter<iterations;iter++) {
-            global->blockSums[blockIdx.x + iter * BLOCKS] = buffers[bufferOut * TI + (T-1) + iter * T];            
+                    
+        __syncthreads();
+        }            
+        
+        // store thread sum in global memory
+        global->threadSums[threadIdx.x + blockIdx.x * T + iter * TB] = buffers[bufferOut * T + threadIdx.x];
+        
+        // store block sum in global memory    
+        if(threadIdx.x == 0) {            
+            global->blockSums[blockIdx.x + iter * BLOCKS] = buffers[bufferOut * T + (T-1)];             
         }
-    }        
+        __syncthreads();                 
+    }    
     
     g.sync();
     
@@ -784,7 +788,7 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     for(int iter=0; iter<iterations;iter++) {
         int absoluteIndex = iter * BLOCKS  + blockIdx.x; // absolute index in the block sums
         uint32_t blockSum = (absoluteIndex > 0)? global->blockSums[*global->blockSumsOut * BI + (absoluteIndex-1) ] : 0; // get the sum of the previous block                
-        uint32_t threadSum = buffers[bufferOut * TI + threadIdx.x + iter * T];
+        uint32_t threadSum = global->threadSums[threadIdx.x + blockIdx.x * T + iter * TB];
         uint32_t dstIndex = blockSum + threadSum - 1; // minus one because the scan in shared memory is inclusive
         uint32_t srcIndex = getIndex(offset, iter);        
         

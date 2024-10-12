@@ -41,7 +41,7 @@ void configureCr3bp(Model* model){
     model->deletePeriodSteps = 20;   // Number of steps per deletion procedure
     model->outputPeriodSteps = 20;   // Number of steps per output to terminal
     model->performOutput = true;     // Write info to terminal
-    model->performRecord = true;     // Write PDFs to .txt file
+    model->performRecord = false;     // Write PDFs to .txt file
     model->performMeasure = false;    // Take discrete measurement updates
     model->useBounds = true;        // Add inadmissible regions to grid
     model->configureGrid = &configureGridCr3bp; // Grid configuration callback
