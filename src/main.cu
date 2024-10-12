@@ -11,9 +11,11 @@
 #include "device.h"
 #include "kernel.h"
 #include "grid.h"
-#include "models.h"
 #include "measurement.h"
 #include "record.h"
+#include "models.h"
+#include "models/lorenz3D.h"
+#include "models/pcr3bp.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -97,7 +99,8 @@ static void executeGbees(int device){
         
     // obtain model
     Model model;
-    configureLorenz3D(&model);
+    //configureLorenz3D(&model);
+    configurePcr3bp(&model);
     int numMeasurements = model.numMeasurements;
         
     // allocate measurements memory
@@ -167,11 +170,14 @@ static void executeGbees(int device){
 static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global), size_t dynamicsSharedMemory, int device){      
     cudaDeviceProp prop;
     int numBlocksPerSm = 0;
+    int numBlocksPerSmLimit = 0;
     HANDLE_CUDA(cudaGetDeviceProperties(&prop, device));
     HANDLE_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, kernel, threads, dynamicsSharedMemory));
+    HANDLE_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSmLimit, dummyKernel, threads, dynamicsSharedMemory));
     int maxBlocks =  prop.multiProcessorCount * numBlocksPerSm;
+    int limitBlocks = prop.multiProcessorCount * numBlocksPerSmLimit;
     
-    log("- Kernel size check: intended %d blocks of %d threads, capacity %d blocks\n",blocks, threads, maxBlocks);
+    log("- Kernel size check: intended %d blocks of %d threads, capacity %d blocks (limit for small kernel %d)\n",blocks, threads, maxBlocks, limitBlocks);
 
     if(blocks > maxBlocks){        
         handleError(GPU_ERROR, "Error: Required blocks (%d) exceed GPU capacity (%d) for cooperative kernel launch\n", blocks, maxBlocks);

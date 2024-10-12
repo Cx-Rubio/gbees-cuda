@@ -57,4 +57,10 @@ size_t requiredSharedMemory(void);
  */
 __global__ void gbeesKernel(int iterations, Model model, Global global);
 
+
+/**
+ * @brief Dummy kernel to check maximum teoretical concurrent threads
+ */
+__global__ void dummyKernel(int iterations, Model model, Global global);
+
 #endif

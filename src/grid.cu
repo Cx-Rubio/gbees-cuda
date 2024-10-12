@@ -100,7 +100,7 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
     
     // compute initial grid size in each dimension
     for(int i=0;i<DIM;i++){
-        grid->initialExtent[i] = (int) round(3.0 * pow(firstMeasurement->cov[i][i], 0.5) / gridDefinition->dx[i]);
+        grid->initialExtent[i] = (int) round(3.0 * pow(firstMeasurement->cov[i+DIM*i], 0.5) / gridDefinition->dx[i]);
     }
     
     // allocate free list in host

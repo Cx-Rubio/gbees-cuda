@@ -4,7 +4,7 @@
 #define CONFIG_H
 
 /** Grid dimension */
-#define DIM 3
+#define DIM 4
 
 /** Number of blocks */
 #define BLOCKS 24
@@ -13,7 +13,7 @@
 #define THREADS_PER_BLOCK 512
 
 /** Number of cells that process one thread */
-#define CELLS_PER_THREAD 2
+#define CELLS_PER_THREAD 10
 
 /** Enable logs (comment out to disable logs) */
 #define ENABLE_LOG

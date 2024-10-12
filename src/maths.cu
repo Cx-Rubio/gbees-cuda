@@ -22,8 +22,8 @@ __host__ void invertMatrix(double* matrix, double* inverse, int size) {
             augmented[i * 2 * size + (j + size)] = (i == j) ? 1.0 : 0.0;
         }
     }
-
-    for (i = 0; i < size; i++) {
+    
+    for (i = 0; i < size; i++) {    
         assertNotZero(augmented[i * 2 * size + i], MATH_ERROR, "Error: matrix inversion error, zero pivot element");
         
         for (j = 0; j < size; j++) {

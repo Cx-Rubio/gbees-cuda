@@ -213,14 +213,10 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         // slight variation w.r.t to original implementation as record time is recalculated for each measurement
         double recordTime = measurement->T / (model.numDistRecorded-1);
         
-        int count = 0; // FIXME remove
-        
         while(fabs(mt - measurement->T) > TOL) {
             rt = 0.0;
            
-            while(rt < recordTime) { // time between PDF recordings      
-            count+=1; // FIXME remove
-            
+            while(rt < recordTime) { // time between PDF recordings                  
                 g.sync();   
 
                 growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
@@ -748,7 +744,8 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     g.sync();
     
     int32_t blockSumsIn = 1;
-    int32_t blockSumsOut = 0;    
+    int32_t blockSumsOut = 0;  
+    // scan process in global memory
     for(int offset=1; offset< BI ; offset*=2){                
         if(threadIdx.x == 0) {
             // swap double buffer indices            
@@ -774,6 +771,7 @@ static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gri
     
     g.sync();
         
+    // initialize double buffer used list
     for(int iter=0; iter<iterations;iter++) {
         uint32_t usedIndex = getIndex(offset, iter); // index in the used list  
         grid->usedListTemp[usedIndex].heapIndex = NULL_REFERENCE;
@@ -1039,8 +1037,7 @@ static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinit
         cell->prob -= (iCell != NULL)?
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
             (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);         
-    }    
-    
+    }        
     cell->prob = fmax(cell->prob, 0.0);        
 }
 
@@ -1058,8 +1055,6 @@ static __device__ void applyMeasurement(int offset, int iterations, Measurement*
 
 /** Apply measurement for one cell */
 static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model){
-    // TODO test apply measurement
-    
     // call measurement function
     double y[DIM];
     (*model->callbacks->z)(y, cell->x, gridDefinition->dx); 
@@ -1068,3 +1063,8 @@ static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement
     double prob = gaussProbability(y, measurement);   
     cell->prob *= prob;
 }
+
+/**
+ * @brief Dummy kernel to check maximum teoretical concurrent threads
+ */
+__global__ void dummyKernel(int iterations, Model model, Global global){}
