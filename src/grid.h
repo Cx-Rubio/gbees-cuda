@@ -26,7 +26,8 @@ typedef struct {
 
 /** Cell definition */
 typedef struct Cell Cell;
-struct Cell {    
+struct Cell {   
+    bool deleted;
     double prob;
     double v[DIM];
     double ctu[DIM];
@@ -40,10 +41,10 @@ struct Cell {
 };
 
 /** Hash table entry */
-typedef struct {
-    int32_t  key[DIM];
-    uint32_t  usedIndex;    
-    uint32_t  hashIndex;    
+typedef struct __align__(4) {
+    int32_t key[DIM];
+    uint32_t usedIndex;    
+    uint32_t hashIndex;        
     } HashTableEntry;
 
 /** Used list entry */
@@ -58,8 +59,10 @@ typedef struct {
     uint32_t size;
     uint32_t initialExtent[DIM];
     HashTableEntry* table; 
+    HashTableEntry* tableTemp;  // double buffer for compact
     uint32_t usedSize;
     UsedListEntry* usedList; 
+    UsedListEntry* usedListTemp; // double buffer for compact
     uint32_t freeSize;
     uint32_t* freeList; 
     Cell* heap; 
@@ -124,6 +127,16 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
  * @param grid grid pointer
  */
 __device__ void insertCell(Cell* cell, Grid* grid);  
+
+/**
+ * @brief Insert a new hash entry (concurrent version)
+ * do not checks existence with previous cells
+ * 
+ * @param hashEntry new hash table entry pointer
+ * @param table table pointer
+ * @param grid grid pointer
+ */
+__device__ void insertHashConcurrent(HashTableEntry* hashEntry, HashTableEntry* table, Grid* grid);
 
 /**
  * @brief Insert a new cell (concurrent version) if not exists

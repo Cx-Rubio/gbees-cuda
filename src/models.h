@@ -35,11 +35,6 @@ struct Model {
   Callbacks* callbacks;
 };
 
-/** 
- * @brief Get Lorenz3D configuration
- */
-void configureLorenz3D(Model* model);
-
 /**
  * @brief Free model memory
  */

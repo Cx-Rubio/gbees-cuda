@@ -9,6 +9,9 @@
 /** Global working memory */
 typedef struct {
     double* reductionArray; // global array for reduction processes
+    uint32_t* threadSums; // to store scan block values
+    uint32_t* blockSums; // double buffer to store scan block totals
+    int32_t* blockSumsOut; // buffer selected at the end of the scan process
     Measurement* measurements;
     Grid* grid;
     GridDefinition* gridDefinition;    
@@ -20,6 +23,32 @@ typedef struct {
 /** Enum to codify the direction of grid growing */
 enum Direction {FORWARD=1, BACKWARD=-1};
 
+/** --- Device global memory allocations --- */
+
+/**
+ * @brief Alloc global device memory 
+ * 
+ * @param global global struct pointer
+ * @param blocks number of concurrent blocks
+ * @param iterations number of cell processed per thread
+ */
+void allocGlobalDevice(Global* global, int blocks, int iterations);
+
+/**
+ * @brief Free global device memory 
+ *  
+ * @param global global struct pointer
+ */
+void freeGlobalDevice(Global* global);
+
+/**
+ * @brief Required shared memory
+ * @return the required shared memory by the kernel
+ */
+size_t requiredSharedMemory(void);
+
+/** Main kernel */
+
 /** 
  * @brief Initialization kernel function 
  * 
@@ -28,5 +57,11 @@ enum Direction {FORWARD=1, BACKWARD=-1};
  * @param global global memory data
  */
 __global__ void gbeesKernel(int iterations, Model model, Global global);
+
+
+/**
+ * @brief Dummy kernel to check maximum teoretical concurrent threads
+ */
+__global__ void dummyKernel(int iterations, Model model, Global global);
 
 #endif

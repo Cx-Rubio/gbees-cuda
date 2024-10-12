@@ -110,14 +110,15 @@ void readMeasurement(Measurement *measurement, int dim, const char* dir, int ind
     assertNotNull(fgets(line, sizeof(line), fd), FORMAT_ERROR, "Error reading measurement file %s", path); // skip label line
     for (int i = 0; i < dim; i++) { // read covariance matrix
         assertNotNull(fgets(line, sizeof(line), fd), FORMAT_ERROR, "Error reading measurement file %s", path);
-        token = strtok(line, " ");
-        while (token != NULL && count < dim) {
-            measurement->cov[i][count++] = strtod(token, NULL);
+        token = strtok(line, " ");    
+        measurement->cov[ i*dim + count++] = strtod(token, NULL);            
+        while (token != NULL && count < dim) {            
             token = strtok(NULL, " ");
+            measurement->cov[i*dim + count++] = strtod(token, NULL);  
         }
         count = 0;
     }
-
+   
     assertNotNull(fgets(line, sizeof(line), fd), FORMAT_ERROR, "Error reading measurement file %s", path); // skip blank line
     assertNotNull(fgets(line, sizeof(line), fd), FORMAT_ERROR, "Error reading measurement file %s", path); // skip label line
     assertNotNull(fgets(line, sizeof(line), fd), FORMAT_ERROR, "Error reading measurement file %s", path); // read T value
@@ -158,7 +159,7 @@ void printMeasurement(Measurement *measurement){
     printf("Measurement: dim %d\n", measurement->dim);
     printf("  Mean: {");
     for(int i=0;i<measurement->dim;i++){
-        printf("%f", measurement->mean[i]);
+        printf("%e", measurement->mean[i]);
         if(i < measurement->dim-1) printf(", ");
     }  
     printf("}\n");
@@ -166,7 +167,7 @@ void printMeasurement(Measurement *measurement){
     for(int i=0;i<measurement->dim;i++){
         for(int j=0;j<measurement->dim;j++){
             if(j == 0) printf("    ");
-            printf("%f", measurement->cov[i][j]);
+            printf("%e", measurement->cov[i * measurement->dim + j]);
             if(j < measurement->dim-1) printf(", ");
             else printf("\n");        
         }

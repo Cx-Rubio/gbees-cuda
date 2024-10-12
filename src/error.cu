@@ -60,6 +60,24 @@ void assertNotZero(int value, enum Error errorCode, const char* msg, ...){
 }
 
 /**
+ * @brief Assert that value is not zero, print error and exit otherwise
+ *
+ * @param value the value to check
+ * @param errorCode the associated error code to the assertion fail
+ * @param msg message to print in case of assertion fail
+ */
+void assertNotZero(double value, enum Error errorCode, const char* msg, ...){
+    if(value == 0.0) {
+        va_list args;
+        va_start(args, msg);
+        vprintf(msg, args);
+        printf("\n");
+        va_end(args);
+        exit(errorCode);
+    }
+}
+
+/**
  * @brief Assert that the value is positive, print error and exit otherwise
  *
  * @param value the value to check

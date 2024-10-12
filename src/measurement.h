@@ -14,8 +14,8 @@ typedef struct Measurement Measurement;
 struct Measurement{
     int dim;                 // dimensionality of measurement mean and covariance
     double mean[DIM];        // measurement mean
-    double cov[DIM][DIM];    // covariance matrix
-    double covInv[DIM][DIM]; // covariance inverse matrix
+    double cov[DIM*DIM];    // covariance matrix
+    double covInv[DIM*DIM]; // covariance inverse matrix
     double T;                // period of continuous-time propagation before next measurement update
 };
 

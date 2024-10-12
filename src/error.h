@@ -33,6 +33,15 @@ void assertNotNull(void *ptr, enum Error errorCode, const char* msg, ...);
 void assertNotZero(int value, enum Error errorCode, const char* msg, ...);
 
 /**
+ * @brief Assert that value is not zero, print error and exit otherwise
+ *
+ * @param value the value to check
+ * @param errorCode the associated error code to the assertion fail
+ * @param msg message to print in case of assertion fail
+ */
+void assertNotZero(double value, enum Error errorCode, const char* msg, ...);
+
+/**
  * @brief Assert that the value is positive or zero, print error and exit otherwise
  *
  * @param value the value to check
