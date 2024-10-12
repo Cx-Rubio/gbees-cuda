@@ -99,8 +99,8 @@ static void executeGbees(int device){
         
     // obtain model
     Model model;
-    configureLorenz3D(&model);
-    //configurePcr3bp(&model);
+    //configureLorenz3D(&model);
+    configurePcr3bp(&model);
     int numMeasurements = model.numMeasurements;
         
     // allocate measurements memory

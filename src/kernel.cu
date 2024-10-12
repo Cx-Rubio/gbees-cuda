@@ -185,10 +185,10 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     if(model.useBounds){ // TODO test use bounds
         initializeGridBoundary(offset, iterations, localArray, global.gridDefinition, &global);   
         
-        /* if(offset == 0){
+        /*if(offset == 0){
             printf("Bounds min %e\n", global.gridDefinition->lo_bound);
             printf("Bounds max %e\n", global.gridDefinition->hi_bound);
-        } */
+        }*/
     }
     
     // normalize distribution
@@ -677,6 +677,12 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
         cell.state[i] = state[i];
         cell.x[i] = gridDefinition->dx[i] * state[i] + gridDefinition->center[i]; // state value
         cell.ctu[i] = 0.0;
+    }
+    
+    // filter if out of bounds            
+    if(model->useBounds){
+        double J = model->callbacks->j(cell.x);    
+        if(J<gridDefinition->lo_bound || J > gridDefinition->hi_bound) return;        
     }
         
     cell.deleted = false;
