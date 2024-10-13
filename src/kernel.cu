@@ -200,11 +200,13 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         
     double tt = 0.0;
     
+    long processedCells = 0;
+    
     // for each measurement
     for(int nm=0; nm<model.numMeasurements; nm++){
         int stepCount = 1; // step count
         
-        if(model.performOutput){
+       if(model.performOutput){
             LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
             LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);                
         }
@@ -222,26 +224,30 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 g.sync();   
 
                 growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
-                
+             
                 if(global.grid->overflow){ // check grid overflow
                     LOG("Grid capacity exceeded\n");
                     return;
                 }
                 
                 updateIkNodes(offset, iterations, global.grid);                      
+                 
                 checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
-                                
+                                  
                 if(threadIdx.x == 0 && blockIdx.x == 0){
                     global.gridDefinition->dt = fmin(global.gridDefinition->dt, recordTime - rt);
                 }
                 g.sync();
-                
+             
                 rt += global.gridDefinition->dt;
                 godunovMethod(offset, iterations, global.gridDefinition, global.grid);
                 g.sync();            
+
                 updateProbability(offset, iterations, global.gridDefinition, global.grid);                
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 
+                processedCells += global.grid->usedSize;
+                                  
                 //LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
@@ -256,7 +262,6 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                     LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt + mt + rt);
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
-                
                 stepCount++;
 
             } // while(rt < recordTime)
@@ -291,7 +296,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         }        
     }
     
-    LOG("Time marching complete.\n");
+    LOG("Time marching complete, processed cells %ld.\n", processedCells);
 }
 
 /** Initialize cells */
