@@ -86,10 +86,10 @@ void printDevice(int device){
     if(supportsCooperativeLaunch(device)){
         printf("  supports cooperative launch\n");    
     }
-    printf("  max threads per block %d\n", prop.maxThreadsPerBlock);    
-    printf("  max threads %d %d %d\n", prop.maxThreadsDim[0],prop.maxThreadsDim[1],prop.maxThreadsDim[2]);            
-    printf("  max blocks %d %d %d\n", prop.maxGridSize[0],prop.maxGridSize[1],prop.maxGridSize[2]);
     printf("  multiprocessors %d\n", prop.multiProcessorCount);    
+    printf("  max threads per block %d\n", prop.maxThreadsPerBlock);    
+    printf("  max threads per multiprocessor %d\n", prop.maxThreadsPerMultiProcessor);
+    printf("  max simultaneous theads %d\n", prop.maxThreadsPerMultiProcessor * prop.multiProcessorCount);
     printf("  shared memory per block %lu\n", prop.sharedMemPerBlock);
     printf("  shared memory per multiprocessor %lu\n", prop.sharedMemPerMultiprocessor);    
 
