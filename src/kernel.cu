@@ -139,7 +139,7 @@ void freeGlobalDevice(Global* global){
  * @brief Required shared memory
  * @return the required shared memory by the kernel
  */
-size_t requiredSharedMemory(){ // TODO check numbers with the profiler
+size_t requiredSharedMemory(){
     size_t sharedMemoryForReduction = sizeof(double) * THREADS_PER_BLOCK;
     size_t sharedMemoryForScan = sizeof(uint32_t) * THREADS_PER_BLOCK * 2;
     log("Shared memory for reduction %lu\n", sharedMemoryForReduction);
@@ -170,7 +170,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     cg::grid_group g = cg::this_grid(); 
     
     // shared memory for reduction processes
-    __shared__ double localArray[THREADS_PER_BLOCK]; // TODO optimize stride in reduction processes  
+    __shared__ double localArray[THREADS_PER_BLOCK];
     
     // get used list offset index
     int offset = getOffset();     
@@ -182,7 +182,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     }    
     
     // set grid maximum and minimum bounds
-    if(model.useBounds){ // TODO test use bounds
+    if(model.useBounds){
         initializeGridBoundary(offset, iterations, localArray, global.gridDefinition, &global);   
         
         /*if(offset == 0){
@@ -480,13 +480,11 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     
     __syncthreads();
     
-    // reduction process in shared memory
-    for(int s=1;s<blockDim.x;s*=2){
-        int indexDst = 2 * s * threadIdx.x;
-        int indexSrc = indexDst + s;
-        if(indexSrc < blockDim.x){
-            localArray[indexDst] += localArray[indexSrc];
-        }
+    // reduction process in shared memory (sequential addressing)
+    for(unsigned int s=blockDim.x/2;s>0;s>>=1){
+        if(threadIdx.x < s){
+            localArray[threadIdx.x] += localArray[threadIdx.x+s];
+        }        
         __syncthreads();
     }
          
@@ -533,12 +531,21 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
     __syncthreads();
     
     // reduction process in shared memory
+    /*
     for(int s=1;s<blockDim.x;s*=2){
         int indexDst = 2 * s * threadIdx.x;
         int indexSrc = indexDst + s;
         if(indexSrc < blockDim.x){
             localArray[indexDst] = fn(localArray[indexSrc], localArray[indexDst]);                        
         }
+        __syncthreads();
+    }*/
+    
+    // reduction process in shared memory (sequential addressing)
+    for(unsigned int s=blockDim.x/2;s>0;s>>=1){
+        if(threadIdx.x < s){
+            localArray[threadIdx.x] = fn(localArray[threadIdx.x+s], localArray[threadIdx.x]);
+        }        
         __syncthreads();
     }
         
@@ -696,8 +703,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 }
 
 /** Prune grid */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global){
-    // TODO optimize stride of shared memory, and amout of shared memory used
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global){    
     // shared memory for scan    
     __shared__ uint32_t buffers[THREADS_PER_BLOCK * 2]; // shared memory for scan (double buffer)
     const int T = THREADS_PER_BLOCK; // number of threads
