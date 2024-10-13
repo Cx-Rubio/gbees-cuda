@@ -4,9 +4,9 @@
 #include "kernel.h"
 #include "models.h"
 #include <stdio.h>
-#include <cooperative_groups.h>
 #include "maths.h"
 #include <float.h>
+#include <cooperative_groups.h>
 
 namespace cg = cooperative_groups;
 
@@ -139,7 +139,7 @@ void freeGlobalDevice(Global* global){
  * @brief Required shared memory
  * @return the required shared memory by the kernel
  */
-size_t requiredSharedMemory(){ // TODO check numbers with the profiler
+size_t requiredSharedMemory(){
     size_t sharedMemoryForReduction = sizeof(double) * THREADS_PER_BLOCK;
     size_t sharedMemoryForScan = sizeof(uint32_t) * THREADS_PER_BLOCK * 2;
     log("Shared memory for reduction %lu\n", sharedMemoryForReduction);
@@ -170,7 +170,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     cg::grid_group g = cg::this_grid(); 
     
     // shared memory for reduction processes
-    __shared__ double localArray[THREADS_PER_BLOCK]; // TODO optimize stride in reduction processes  
+    __shared__ double localArray[THREADS_PER_BLOCK];
     
     // get used list offset index
     int offset = getOffset();     
@@ -182,7 +182,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     }    
     
     // set grid maximum and minimum bounds
-    if(model.useBounds){ // TODO test use bounds
+    if(model.useBounds){
         initializeGridBoundary(offset, iterations, localArray, global.gridDefinition, &global);   
         
         /*if(offset == 0){
@@ -200,11 +200,13 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         
     double tt = 0.0;
     
+    long processedCells = 0;
+    
     // for each measurement
     for(int nm=0; nm<model.numMeasurements; nm++){
         int stepCount = 1; // step count
         
-        if(model.performOutput){
+       if(model.performOutput){
             LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
             LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);                
         }
@@ -214,7 +216,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         double rt;        
         // slight variation w.r.t to original implementation as record time is recalculated for each measurement
         double recordTime = measurement->T / (model.numDistRecorded-1);
-        
+
         while(fabs(mt - measurement->T) > TOL) {
             rt = 0.0;
            
@@ -222,26 +224,30 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 g.sync();   
 
                 growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
-                
+             
                 if(global.grid->overflow){ // check grid overflow
                     LOG("Grid capacity exceeded\n");
                     return;
                 }
                 
                 updateIkNodes(offset, iterations, global.grid);                      
+                 
                 checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
-                                
+                                  
                 if(threadIdx.x == 0 && blockIdx.x == 0){
                     global.gridDefinition->dt = fmin(global.gridDefinition->dt, recordTime - rt);
                 }
                 g.sync();
-                
+             
                 rt += global.gridDefinition->dt;
                 godunovMethod(offset, iterations, global.gridDefinition, global.grid);
                 g.sync();            
+
                 updateProbability(offset, iterations, global.gridDefinition, global.grid);                
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 
+                processedCells += global.grid->usedSize;
+                                  
                 //LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
 
                 if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
@@ -256,8 +262,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                     LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt + mt + rt);
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
-                
-                stepCount++;                                            
+                stepCount++;
+
             } // while(rt < recordTime)
 
             if (((stepCount-1) % model.outputPeriodSteps != 0) && model.performOutput){ // print size to terminal  
@@ -290,7 +296,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         }        
     }
     
-    LOG("Time marching complete.\n");
+    LOG("Time marching complete, processed cells %ld.\n", processedCells);
 }
 
 /** Initialize cells */
@@ -479,13 +485,11 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
     
     __syncthreads();
     
-    // reduction process in shared memory
-    for(int s=1;s<blockDim.x;s*=2){
-        int indexDst = 2 * s * threadIdx.x;
-        int indexSrc = indexDst + s;
-        if(indexSrc < blockDim.x){
-            localArray[indexDst] += localArray[indexSrc];                        
-        }
+    // reduction process in shared memory (sequential addressing)
+    for(unsigned int s=blockDim.x/2;s>0;s>>=1){
+        if(threadIdx.x < s){
+            localArray[threadIdx.x] += localArray[threadIdx.x+s];
+        }        
         __syncthreads();
     }
          
@@ -532,12 +536,21 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
     __syncthreads();
     
     // reduction process in shared memory
+    /*
     for(int s=1;s<blockDim.x;s*=2){
         int indexDst = 2 * s * threadIdx.x;
         int indexSrc = indexDst + s;
         if(indexSrc < blockDim.x){
             localArray[indexDst] = fn(localArray[indexSrc], localArray[indexDst]);                        
         }
+        __syncthreads();
+    }*/
+    
+    // reduction process in shared memory (sequential addressing)
+    for(unsigned int s=blockDim.x/2;s>0;s>>=1){
+        if(threadIdx.x < s){
+            localArray[threadIdx.x] = fn(localArray[threadIdx.x+s], localArray[threadIdx.x]);
+        }        
         __syncthreads();
     }
         
@@ -695,8 +708,7 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
 }
 
 /** Prune grid */
-static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global){
-    // TODO optimize stride of shared memory, and amout of shared memory used
+static __device__ void pruneGrid(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid, Global* global){    
     // shared memory for scan    
     __shared__ uint32_t buffers[THREADS_PER_BLOCK * 2]; // shared memory for scan (double buffer)
     const int T = THREADS_PER_BLOCK; // number of threads

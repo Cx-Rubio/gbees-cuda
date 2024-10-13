@@ -16,6 +16,7 @@
 #include "models.h"
 #include "models/lorenz3D.h"
 #include "models/pcr3bp.h"
+#include <cuda_profiler_api.h>
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -55,7 +56,9 @@ int main(int argc, char **argv) {
 #endif
     
     // execute GBEES algorithm
+    cudaProfilerStart();
     executeGbees(device); 
+    cudaProfilerStop();
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
@@ -99,8 +102,8 @@ static void executeGbees(int device){
         
     // obtain model
     Model model;
-    //configureLorenz3D(&model);
-    configurePcr3bp(&model);
+    configureLorenz3D(&model);
+    //configurePcr3bp(&model);
     int numMeasurements = model.numMeasurements;
         
     // allocate measurements memory
