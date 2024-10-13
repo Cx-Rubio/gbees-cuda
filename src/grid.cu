@@ -219,9 +219,7 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
  * @param dst destination
  */
 __host__ __device__ void copyKey(int32_t* src, int32_t* dst){
-    for(int i=0; i<DIM; i++){
-        dst[i] = src[i];
-    }   
+    memcpy(dst, src, sizeof(int32_t)*DIM);
 }
 
 /**  --- Private functions implementation (device) ---  */
@@ -246,19 +244,15 @@ static __host__ __device__ uint32_t computeHash(int32_t* state){
 
 /** Check if the state coordinates are equal */
 static __device__ bool equalState(int32_t* state1, int32_t* state2){
-    for(int i=0; i<DIM; i++){
+    for(int i=0; i<DIM; ++i){
         if(state1[i] != state2[i]) return false;
-    }    
+    }
     return true;
 }
 
 /** Copy cell contents */
 static __device__ void copyCell(Cell* src, Cell* dst){
-    char *d = (char *)dst;
-    const char *s = (const char *)src;
-    for(int i=0;i<sizeof(Cell);i++){
-        d[i] = s[i];
-    }    
+    memcpy(dst, src, sizeof(Cell));
 }
 
 /** --- Grid operations  (device)  --- */
@@ -304,7 +298,6 @@ __device__ void insertCell(Cell* cell, Grid* grid){
         }
     }            
 } 
-
 
 /**
  * @brief Insert a new cell (concurrent version) if not exists

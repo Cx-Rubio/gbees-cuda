@@ -4,9 +4,9 @@
 #include "kernel.h"
 #include "models.h"
 #include <stdio.h>
-#include <cooperative_groups.h>
 #include "maths.h"
 #include <float.h>
+#include <cooperative_groups.h>
 
 namespace cg = cooperative_groups;
 
@@ -214,7 +214,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
         double rt;        
         // slight variation w.r.t to original implementation as record time is recalculated for each measurement
         double recordTime = measurement->T / (model.numDistRecorded-1);
-        
+
         while(fabs(mt - measurement->T) > TOL) {
             rt = 0.0;
            
@@ -257,7 +257,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
                 
-                stepCount++;                                            
+                stepCount++;
+
             } // while(rt < recordTime)
 
             if (((stepCount-1) % model.outputPeriodSteps != 0) && model.performOutput){ // print size to terminal  
@@ -484,7 +485,7 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
         int indexDst = 2 * s * threadIdx.x;
         int indexSrc = indexDst + s;
         if(indexSrc < blockDim.x){
-            localArray[indexDst] += localArray[indexSrc];                        
+            localArray[indexDst] += localArray[indexSrc];
         }
         __syncthreads();
     }

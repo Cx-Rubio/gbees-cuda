@@ -14,7 +14,7 @@
 #define RESERVED UINT32_MAX-1
 
 /** Grid definition */
-typedef struct {
+typedef struct __align__(8) {
     int maxCells;        
     double center[DIM];
     double dx[DIM];
@@ -26,7 +26,7 @@ typedef struct {
 
 /** Cell definition */
 typedef struct Cell Cell;
-struct Cell {   
+struct __align__(8) Cell {
     bool deleted;
     double prob;
     double v[DIM];
@@ -48,13 +48,13 @@ typedef struct __align__(4) {
     } HashTableEntry;
 
 /** Used list entry */
-typedef struct {
+typedef struct __align__(4) {
     uint32_t heapIndex;
     uint32_t hashTableIndex;
 } UsedListEntry;
 
 /** Grid data structure */
-typedef struct {
+typedef struct __align__(8) {
     bool overflow;
     uint32_t size;
     uint32_t initialExtent[DIM];
