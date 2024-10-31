@@ -5,13 +5,17 @@
 
 #include "kernel.h"
 #include "grid.h"
+#include "models.h"
 
 /**
- * @brief Record result
+ * @brief Record distributions
  * 
- * @param grid 
- * @param gridDefinition
+ * @param snapshootsHost snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param model the model
+ * @param grid the grid
+ * @param gridDefinition grid definition
  */
-void recordResult(Grid* gridDevice, GridDefinition* gridDefinition);
+void recordDistributions(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, Grid* grid, GridDefinition* gridDefinition);
 
 #endif

@@ -7,50 +7,70 @@
 /** Record one cell */
 static void recordCell(Cell* cell, FILE* fd);
 
+/** Record one distribution */
+static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, int gridSize, int nm, int nr, double threshold);
+
 /**
- * @brief Record result
+ * @brief Record distributions
  * 
- * @param grid 
- * @param gridDefinition
+ * @param snapshootsHost snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param model the model
+ * @param grid the grid
+ * @param gridDefinition grid definition
  */
-void recordResult(Grid* gridDevice, GridDefinition* gridDefinition){
-    
-    Grid grid;
-    
-    // copy grid information to host
-    HANDLE_CUDA( cudaMemcpy( &grid, gridDevice, sizeof(Grid), cudaMemcpyDeviceToHost) );
-        
-    int size = grid.size;
-    
-    // alloc host memory
-    UsedListEntry* usedList = (UsedListEntry*)malloc(size * sizeof(UsedListEntry));
-    Cell* heap = (Cell*)malloc(size * sizeof(Cell));    
-    assertNotNull(usedList, MALLOC_ERROR, "Error allocating host memory for result record");
-    assertNotNull(heap, MALLOC_ERROR, "Error allocating host memory for result record");
-    
-    // copy device to host
-    HANDLE_CUDA( cudaMemcpy( usedList, grid.usedList, size * sizeof(UsedListEntry), cudaMemcpyDeviceToHost) );
-    HANDLE_CUDA( cudaMemcpy( heap, grid.heap, size * sizeof(Cell), cudaMemcpyDeviceToHost) );
-    
-    // output file
-    FILE* fd = fopen(RESULT_FILE_NAME, "w");
-    assertNotNull(fd, IO_ERROR, "Error opening output file");
-    
-    log("Record grid with %d cells to file %s\n", grid.usedSize, RESULT_FILE_NAME);
-    
-    for(uint32_t usedIndex = 0; usedIndex < grid.usedSize; usedIndex++){
-        uint32_t heapIndex = usedList[usedIndex].heapIndex;
-        Cell* cell = &heap[heapIndex];
-        if(cell->prob > gridDefinition->threshold){
-            recordCell(&heap[heapIndex], fd);        
+void recordDistributions(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, Grid* grid, GridDefinition* gridDefinition){
+    for(int nm =0; nm < model->numMeasurements; nm++) {
+        for(int nr=0; nr < model->numDistRecorded; nr++) {
+            recordDistribution(snapshootsHost, snapshootsDevice, model, grid->size, nm, nr, gridDefinition->threshold);
         }
     }
+}
+
+/** Record one distribution */
+static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, int gridSize, int nm, int nr, double threshold){
+    Snapshoot snapshoot;
+    int index = nr + nm * model->numDistRecorded;
+    
+    // copy snapshoot from device to host
+    HANDLE_CUDA( cudaMemcpy( &snapshoot, &snapshootsDevice[index], sizeof(Snapshoot), cudaMemcpyDeviceToHost) );
+    
+    // alloc host memory
+    UsedListEntry* usedList = (UsedListEntry*)malloc(gridSize * sizeof(UsedListEntry));
+    Cell* heap = (Cell*)malloc(gridSize * sizeof(Cell));
+    
+    assertNotNull(usedList, MALLOC_ERROR, "Error allocating host memory for record distribution");
+    assertNotNull(heap, MALLOC_ERROR, "Error allocating host memory for record distribution");
+    
+    // copy snapshoot from device to host
+    HANDLE_CUDA( cudaMemcpy( usedList, snapshoot.usedList, gridSize * sizeof(UsedListEntry), cudaMemcpyDeviceToHost) );
+    HANDLE_CUDA( cudaMemcpy( heap, snapshoot.heap, gridSize * sizeof(Cell), cudaMemcpyDeviceToHost) );
+    
+    // output file
+    char fileName[200];        
+    snprintf(fileName, sizeof(fileName), "%s/P%d_pdf_%d.txt", model->pDir, nm, nr);    
+    FILE* fd = fopen(fileName, "w");
+    assertNotNull(fd, IO_ERROR, "Error opening output file");
+    
+    log("Record grid for time %f with %d cells to file %s\n", snapshoot.time, snapshoot.usedSize, fileName);
+    
+    // record time
+    fprintf(fd, "%f\n", snapshoot.time);
+    
+    // record cells
+    for(uint32_t usedIndex = 0; usedIndex < snapshoot.usedSize; usedIndex++){
+        uint32_t heapIndex = usedList[usedIndex].heapIndex;
+        Cell* cell = &heap[heapIndex];
+        if(cell->prob > threshold){
+            recordCell(&heap[heapIndex], fd);                    
+        } 
+    }    
     
     fclose(fd);
     
     // free host memory
     free(usedList);
-    free(heap);
+    free(heap);    
 }
 
 /** Record one cell */

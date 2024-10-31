@@ -15,7 +15,7 @@ __device__ static void zLorenz3D(double* h, double* x, double* dx);
 __global__ static void initializeCallbacksLorenz3D(Callbacks* model);
 
 /** Default configuration parameters for Lorenz3D */
-char pDirLorenz3D[] = "./results"; // TODO still not used
+char pDirLorenz3D[] = "./results";
 char mDirLorenz3D[] = "./measurements/Lorenz3D";
 char mFileLorenz3D[] = "measurement0.txt";
 
@@ -38,7 +38,7 @@ void configureLorenz3D(Model* model){
     model->deletePeriodSteps = 20;   // Number of steps per deletion procedure
     model->outputPeriodSteps = 20;   // Number of steps per output to terminal
     model->performOutput = true;     // Write info to terminal
-    model->performRecord = false;     // Write PDFs to .txt file
+    model->performRecord = true;     // Write PDFs to .txt file
     model->performMeasure = true;    // Take discrete measurement updates
     model->useBounds = false;        // Add inadmissible regions to grid
     model->configureGrid = &configureGridLorenz3D; // Grid configuration callback

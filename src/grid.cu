@@ -67,7 +67,7 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){
     HANDLE_CUDA( cudaMalloc( &grid->freeList, size * sizeof(uint32_t) ) );
     HANDLE_CUDA( cudaMalloc( &grid->heap, size * sizeof(Cell) ) );
     HANDLE_CUDA( cudaMalloc( &grid->scanBuffer, size * sizeof(uint32_t) ) );    
-    HANDLE_CUDA( cudaMalloc( gridDevice, sizeof(Grid) ) );    
+    HANDLE_CUDA( cudaMalloc( gridDevice, sizeof(Grid) ) );      
 }
 
 /**
@@ -77,14 +77,14 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice){
  * @param gridDevice grid device pointer
  */
 void freeGridDevice(Grid* grid, Grid* gridDevice){
-     HANDLE_CUDA( cudaFree( grid->table) ); 
-     HANDLE_CUDA( cudaFree( grid->tableTemp) ); 
-     HANDLE_CUDA( cudaFree( grid->usedList) ); 
-     HANDLE_CUDA( cudaFree( grid->usedListTemp) ); 
-     HANDLE_CUDA( cudaFree( grid->freeList) ); 
-     HANDLE_CUDA( cudaFree( grid->heap) ); 
-     HANDLE_CUDA( cudaFree( grid->scanBuffer) ); 
-     HANDLE_CUDA( cudaFree( gridDevice) ); 
+    HANDLE_CUDA( cudaFree( grid->table) ); 
+    HANDLE_CUDA( cudaFree( grid->tableTemp) ); 
+    HANDLE_CUDA( cudaFree( grid->usedList) ); 
+    HANDLE_CUDA( cudaFree( grid->usedListTemp) ); 
+    HANDLE_CUDA( cudaFree( grid->freeList) ); 
+    HANDLE_CUDA( cudaFree( grid->heap) ); 
+    HANDLE_CUDA( cudaFree( grid->scanBuffer) ); 
+    HANDLE_CUDA( cudaFree( gridDevice) ); 
 }
 
 /**
@@ -171,6 +171,87 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
     // free host memory
     free(usedListHost);
     free(hashtableHost);
+}
+
+/**
+ * @brief Alloc snapshoots in host memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void allocSnapshootsHost(Snapshoot** snapshoots, bool performRecord, int numMeasurements, int numDistRecorded){
+    if(performRecord){    
+        int numSnapshoots = numMeasurements * numDistRecorded;      
+        *snapshoots = (Snapshoot*)malloc( numSnapshoots * sizeof(Snapshoot)); 
+    }
+}
+
+/**
+ * @brief Alloc snapshoots in device memory
+ * 
+ * @param gridSize maximum grid size
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot** snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded){
+    if(performRecord){     
+        int numSnapshoots = numMeasurements * numDistRecorded;                   
+        for(int i=0; i<numSnapshoots; i++){            
+            HANDLE_CUDA(cudaMalloc(&snapshoots[i].usedList, gridSize * sizeof(UsedListEntry)));
+            HANDLE_CUDA(cudaMalloc(&snapshoots[i].heap, gridSize * sizeof(Cell)));            
+        }
+        HANDLE_CUDA(cudaMalloc(snapshootsDevice, numSnapshoots * sizeof(Snapshoot)));
+    }  
+}
+
+/**
+ * @brief Initialize snapshoots in device memory 
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded){
+    if(performRecord){     
+        int numSnapshoots = numMeasurements * numDistRecorded;  
+        // copy snapshoots
+        HANDLE_CUDA( cudaMemcpy( snapshootsDevice, snapshootsHost, numSnapshoots * sizeof(Snapshoot), cudaMemcpyHostToDevice) );
+    }
+}
+
+/**
+ * @brief Free snapshoots host memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param performRecord if should perform record
+ */
+void freeSnapshootsHost(Snapshoot* snapshoots, bool performRecord){
+    if(performRecord) free(snapshoots);
+}
+
+/**
+ * @brief Free snapshoos device memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ */
+void freeSnapshootsDevice(Snapshoot* snapshoots, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded){
+    if(performRecord){        
+        int numSnapshoots = numMeasurements * numDistRecorded;        
+        for(int i=0; i<numSnapshoots; i++){
+            HANDLE_CUDA(cudaFree(snapshoots[i].usedList));
+            HANDLE_CUDA(cudaFree(snapshoots[i].heap));
+        }
+        HANDLE_CUDA(cudaFree(snapshootsDevice));
+    }     
 }
 
 /**  --- Private functions implementation (host) ---  */

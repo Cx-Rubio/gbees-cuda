@@ -100,6 +100,12 @@ static __device__ void applyMeasurement(int offset, int iterations, Measurement*
 /** Apply measurement for one cell */
 static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
+/** Copy device memory */
+static __device__ void parallelMemCopy(void* src, void* dst, size_t size);
+
+/** Take snapshoot */
+static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, double time);
+
 /** Get offset index to iterate cells */
 static __device__ int getOffset();
 
@@ -165,7 +171,7 @@ static __device__ uint32_t getIndex(int offset, int iteration){
  * @param model the model
  * @param global global memory data
  */
-__global__ void gbeesKernel(int iterations, Model model, Global global){
+__global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
     
@@ -199,16 +205,20 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     Measurement* measurement = &global.measurements[0];
         
     double tt = 0.0;
-    
+    int recordIndex = 0;    
     long processedCells = 0;
     
     // for each measurement
     for(int nm=0; nm<model.numMeasurements; nm++){
-        int stepCount = 1; // step count
+       int stepCount = 1; // step count
         
        if(model.performOutput){
             LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
             LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);                
+        }
+        
+        if(model.performRecord){ // record PDF            
+            takeSnapshoot(&recordIndex, snapshoots, global.grid, tt);           
         }
         
         // propagate probability distribution until the next measurement
@@ -271,9 +281,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);
             }
             
-            if(model.performRecord){ // record PDF
-                LOG("Record PDF (not implemented)\n");
-                // TODO implement snapshoots
+            if(model.performRecord){ // record PDF                
+                takeSnapshoot(&recordIndex, snapshoots, global.grid, tt + mt + rt);   
             }            
             mt += rt;
         }
@@ -1086,7 +1095,32 @@ static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement
     cell->prob *= prob;
 }
 
+/** Copy device memory */
+static __device__ void parallelMemCopy(void* src, void* dst, size_t size){
+    int i = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;            
+    for (; i<size; i += BLOCKS * THREADS_PER_BLOCK) {
+        ((char*)dst)[i] = ((char*)src)[i];
+    }
+}
+
+/** Take snapshoot */
+static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, double time){   
+    // copy usedList
+    parallelMemCopy(grid->usedList, snapshoots[*recordIndex].usedList, grid->usedSize * sizeof(UsedListEntry));
+    // copy heap
+    parallelMemCopy(grid->heap, snapshoots[*recordIndex].heap, grid->size * sizeof(Cell));
+    
+    // update used size and time
+    if(threadIdx.x == 0 && blockIdx.x == 0){
+        snapshoots[*recordIndex].time = time;
+        snapshoots[*recordIndex].usedSize = grid->usedSize;    
+    }
+    
+    // increment record index
+    *recordIndex = *recordIndex + 1;       
+}
+
 /**
  * @brief Dummy kernel to check maximum teoretical concurrent threads
  */
-__global__ void dummyKernel(int iterations, Model model, Global global){}
+__global__ void dummyKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){}

@@ -53,6 +53,14 @@ typedef struct __align__(4) {
     uint32_t hashTableIndex;
 } UsedListEntry;
 
+/** Snapshoot data structure */
+typedef struct __align__(8) {
+    double time;
+    uint32_t usedSize;
+    UsedListEntry* usedList;
+    Cell* heap;     
+} Snapshoot;
+
 /** Grid data structure */
 typedef struct __align__(8) {
     bool overflow;
@@ -66,7 +74,7 @@ typedef struct __align__(8) {
     uint32_t freeSize;
     uint32_t* freeList; 
     Cell* heap; 
-    uint32_t* scanBuffer; // buffer to perform exclusive-scan in the prune operation
+    uint32_t* scanBuffer; // buffer to perform exclusive-scan in the prune operation    
     } Grid;
 
 /** --- Device global memory allocations --- */
@@ -109,6 +117,56 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice);
  * @param gridDevice grid device pointer
  */
 void freeGridDevice(Grid* grid, Grid* gridDevice);
+
+/**
+ * @brief Alloc snapshoots in host memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void allocSnapshootsHost(Snapshoot** snapshoots, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
+ * @brief Alloc snapshoots in device memory
+ * 
+ * @param gridSize maximum grid size
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot** snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
+ * @brief Initialize snapshoots in device memory 
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
+ * @brief Free snapshoots host memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param performRecord if should perform record
+ */
+void freeSnapshootsHost(Snapshoot* snapshoots, bool performRecord);
+
+/**
+ * @brief Free snapshoos device memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ */
+void freeSnapshootsDevice(Snapshoot* snapshoots, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded);
 
 /**
  * @brief Initialize hashtable and free list in host and copy to device

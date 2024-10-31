@@ -55,13 +55,14 @@ size_t requiredSharedMemory(void);
  * @param iterations number of cells that should process the same thread
  * @param model the model
  * @param global global memory data
+ * @param snapshoots snapshoots memory
  */
-__global__ void gbeesKernel(int iterations, Model model, Global global);
+__global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoot* snapshoots);
 
 
 /**
  * @brief Dummy kernel to check maximum teoretical concurrent threads
  */
-__global__ void dummyKernel(int iterations, Model model, Global global);
+__global__ void dummyKernel(int iterations, Model model, Global global, Snapshoot* snapshoots);
 
 #endif

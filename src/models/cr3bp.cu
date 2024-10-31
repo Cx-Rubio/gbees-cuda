@@ -15,7 +15,7 @@ __device__ static double jCr3bp(double* x);
 __global__ static void initializeCallbacksCr3bp(Callbacks* model);
 
 /** Default configuration parameters for CR3BP */
-char pDirCr3bp[] = "./results"; // TODO still not used
+char pDirCr3bp[] = "./results";
 char mDirCr3bp[] = "./measurements/CR3BP";
 char mFileCr3bp[] = "measurement0.txt";
 
