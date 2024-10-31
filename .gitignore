@@ -7,3 +7,4 @@
 *.fatbin
 *.project
 GBEES
+results/*pdf*.txt
