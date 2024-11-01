@@ -17,7 +17,6 @@
 #include "models/lorenz3D.h"
 #include "models/pcr3bp.h"
 #include "models/cr3bp.h"
-#include <cuda_profiler_api.h>
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -56,10 +55,8 @@ int main(int argc, char **argv) {
         clock_gettime(CLOCK_REALTIME, &start); // start time measurement
 #endif
     
-    // execute GBEES algorithm
-    cudaProfilerStart();
-    executeGbees(device); 
-    cudaProfilerStop();
+    // execute GBEES algorithm    
+    executeGbees(device);     
 
 #ifdef ENABLE_LOG
         // elapsed time measurement
@@ -151,9 +148,6 @@ static void executeGbees(int device){
     global.grid = gridDevice;
     global.gridDefinition = gridDefinitionDevice;
     allocGlobalDevice(&global, blocks, iterations);
-        
-    // configure cache preferences
-    cudaFuncSetCacheConfig(gbeesKernel, cudaFuncCachePreferL1);
         
     // check if the block count can fit in the GPU
     size_t staticSharedMemory = requiredSharedMemory();
