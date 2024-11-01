@@ -68,4 +68,21 @@ __host__ void log(const char* msg, ...);
     #define LOG(...) void()
 #endif
 
+/**
+ * Profiling macros
+ */
+#define TIME_INIT unsigned long long start, stop, cycles = 0; global.gridDefinition->cycles = 0;
+#define TIME_START g.sync(); if(threadIdx.x == 0 && blockIdx.x == 0) { start = clock64(); }
+#define TIME_STOP g.sync(); if(threadIdx.x == 0 && blockIdx.x == 0) { stop = clock64();  cycles += stop - start; }
+#define TIME_PRINT if(threadIdx.x == 0 && blockIdx.x == 0) printf("Cycles %lld\n", cycles);
+
+#define TIME_INIT_INNER unsigned long long start, stop, cycles = 0;
+#define TIME_START_INNER g.sync(); start = clock64();
+#define TIME_STOP_INNER g.sync(); stop = clock64();  cycles += stop - start; gridDefinition->cycles += cycles; 
+
+#define TIME_START_INNER_NO_SYNC start = clock64();
+#define TIME_STOP_INNER_NO_SYNC stop = clock64();  cycles += stop - start; gridDefinition->cycles += cycles; 
+
+#define TIME_PRINT_INNER if(threadIdx.x == 0 && blockIdx.x == 0) printf("Cycles inner %lld\n", global.gridDefinition->cycles);
+
 #endif

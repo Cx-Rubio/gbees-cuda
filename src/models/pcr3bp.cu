@@ -16,7 +16,7 @@ __device__ static double jPcr3bp(double* x);
 __global__ static void initializeCallbacksPcr3bp(Callbacks* model);
 
 /** Default configuration parameters for PCR3BP */
-char pDirPcr3bp[] = "./results"; // TODO still not used
+char pDirPcr3bp[] = "./results";
 char mDirPcr3bp[] = "./measurements/PCR3BP";
 char mFilePcr3bp[] = "measurement0.txt";
 

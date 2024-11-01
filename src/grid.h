@@ -14,30 +14,32 @@
 #define RESERVED UINT32_MAX-1
 
 /** Grid definition */
-typedef struct __align__(8) {
-    int maxCells;        
+typedef struct __align__(8) {    
     double center[DIM];
     double dx[DIM];
     double dt;
     double threshold;    
     double hi_bound;
-    double lo_bound;
+    double lo_bound;    
+    unsigned long long cycles; // only for profiling
+    int maxCells;        
 } GridDefinition;
 
 /** Cell definition */
 typedef struct Cell Cell;
-struct __align__(8) Cell {
-    bool deleted;
-    double prob;
-    double v[DIM];
-    double ctu[DIM];
+struct __align__(8) Cell {    
     int32_t state[DIM];
-    double x[DIM];
     uint32_t iNodes[DIM];
     uint32_t kNodes[DIM];
+    uint32_t pad;
+    double prob;
+    double v[DIM];
+    double ctu[DIM];    
+    double x[DIM];    
     double dcu;
     double cfl_dt;
     double bound_val;    
+    bool deleted;
 };
 
 /** Hash table entry */
@@ -45,6 +47,7 @@ typedef struct __align__(4) {
     int32_t key[DIM];
     uint32_t usedIndex;    
     uint32_t hashIndex;        
+    uint32_t pad;
     } HashTableEntry;
 
 /** Used list entry */
@@ -52,6 +55,14 @@ typedef struct __align__(4) {
     uint32_t heapIndex;
     uint32_t hashTableIndex;
 } UsedListEntry;
+
+/** Snapshoot data structure */
+typedef struct __align__(8) {
+    double time;
+    uint32_t usedSize;
+    UsedListEntry* usedList;
+    Cell* heap;     
+} Snapshoot;
 
 /** Grid data structure */
 typedef struct __align__(8) {
@@ -66,7 +77,7 @@ typedef struct __align__(8) {
     uint32_t freeSize;
     uint32_t* freeList; 
     Cell* heap; 
-    uint32_t* scanBuffer; // buffer to perform exclusive-scan in the prune operation
+    uint32_t* scanBuffer; // buffer to perform exclusive-scan in the prune operation    
     } Grid;
 
 /** --- Device global memory allocations --- */
@@ -111,6 +122,56 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice);
 void freeGridDevice(Grid* grid, Grid* gridDevice);
 
 /**
+ * @brief Alloc snapshoots in host memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void allocSnapshootsHost(Snapshoot** snapshoots, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
+ * @brief Alloc snapshoots in device memory
+ * 
+ * @param gridSize maximum grid size
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot** snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
+ * @brief Initialize snapshoots in device memory 
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ * @param numMeasurements number of measurements
+ * @param numDistRecorded number of distributions recorded per measurement
+ */
+void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
+ * @brief Free snapshoots host memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param performRecord if should perform record
+ */
+void freeSnapshootsHost(Snapshoot* snapshoots, bool performRecord);
+
+/**
+ * @brief Free snapshoos device memory
+ * 
+ * @param snapshoots snapshoots host pointer
+ * @param snapshootsDevice snapshoots device pointer
+ * @param performRecord if should perform record
+ */
+void freeSnapshootsDevice(Snapshoot* snapshoots, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded);
+
+/**
  * @brief Initialize hashtable and free list in host and copy to device
  * 
  * @param grid grid host pointer
@@ -143,8 +204,10 @@ __device__ void insertHashConcurrent(HashTableEntry* hashEntry, HashTableEntry* 
  * 
  * @param cell new cell pointer
  * @param grid grid pointer
+ * @param gridDefinition grid definition for callback to finish cell initialization
+ * @param model model for callback to finish cell initialization
  */
-__device__ void insertCellConcurrent(Cell* cell, Grid* grid);
+__device__ void insertCellConcurrent(Cell* cell, Grid* grid, GridDefinition* gridDefinition, Model* model);
 
  /**
  * @brief Delete a new cell

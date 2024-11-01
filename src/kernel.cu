@@ -74,10 +74,10 @@ static __device__ bool fluxFrom(Cell* cell, enum Direction direction, int dimens
 static __device__ void godunovMethod(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Compute the donor cell upwind value for each grid cell */
-static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef);
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDefinition);
 
 /** Compute the corner transport upwind values in each direction */
-static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef);
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDefinition);
 
 /** Compute flux from the left */
 static __device__ double uPlus(double v);
@@ -92,13 +92,19 @@ static __device__ double fluxLimiter(double th);
 static __device__ void updateProbability(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Update probability for one cell */
-static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef);
+static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDefinition);
 
 /** Apply measurement */
 static __device__ void applyMeasurement(int offset, int iterations, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model);
 
 /** Apply measurement for one cell */
 static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model);
+
+/** Copy device memory */
+static __device__ void parallelMemCopy(void* src, void* dst, size_t size);
+
+/** Take snapshoot */
+static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, double time);
 
 /** Get offset index to iterate cells */
 static __device__ int getOffset();
@@ -165,17 +171,17 @@ static __device__ uint32_t getIndex(int offset, int iteration){
  * @param model the model
  * @param global global memory data
  */
-__global__ void gbeesKernel(int iterations, Model model, Global global){
+__global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
-    
+
     // shared memory for reduction processes
     __shared__ double localArray[THREADS_PER_BLOCK];
     
     // get used list offset index
     int offset = getOffset();     
         
-    // initialize cells
+    // initialize cells    
     for(int iter=0;iter<iterations;iter++){        
         int usedIndex = getIndex(offset, iter); // index in the used list               
         initializeCell(usedIndex, global.gridDefinition, &model, &global); // initialize cell
@@ -183,32 +189,30 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
     
     // set grid maximum and minimum bounds
     if(model.useBounds){
-        initializeGridBoundary(offset, iterations, localArray, global.gridDefinition, &global);   
-        
-        /*if(offset == 0){
-            printf("Bounds min %e\n", global.gridDefinition->lo_bound);
-            printf("Bounds max %e\n", global.gridDefinition->hi_bound);
-        }*/
+        initializeGridBoundary(offset, iterations, localArray, global.gridDefinition, &global);           
     }
     
     // normalize distribution
     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
    
-    
     // select first measurement
     Measurement* measurement = &global.measurements[0];
         
     double tt = 0.0;
-    
+    int recordIndex = 0;    
     long processedCells = 0;
-    
+
     // for each measurement
     for(int nm=0; nm<model.numMeasurements; nm++){
-        int stepCount = 1; // step count
+       int stepCount = 1; // step count
         
        if(model.performOutput){
             LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
             LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);                
+        }
+        
+        if(model.performRecord){ // record PDF            
+            takeSnapshoot(&recordIndex, snapshoots, global.grid, tt);           
         }
         
         // propagate probability distribution until the next measurement
@@ -221,39 +225,41 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             rt = 0.0;
            
             while(rt < recordTime) { // time between PDF recordings                  
-                g.sync();   
 
+                g.sync();   
+ 
                 growGrid(offset, iterations, global.gridDefinition, global.grid, &model);            
-             
+            
                 if(global.grid->overflow){ // check grid overflow
                     LOG("Grid capacity exceeded\n");
                     return;
                 }
-                
-                updateIkNodes(offset, iterations, global.grid);                      
-                 
+               
+                updateIkNodes(offset, iterations, global.grid);  
+                                   
                 checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
                                   
                 if(threadIdx.x == 0 && blockIdx.x == 0){
                     global.gridDefinition->dt = fmin(global.gridDefinition->dt, recordTime - rt);
                 }
+ 
                 g.sync();
-             
-                rt += global.gridDefinition->dt;
-                godunovMethod(offset, iterations, global.gridDefinition, global.grid);
-                g.sync();            
-
-                updateProbability(offset, iterations, global.gridDefinition, global.grid);                
-                normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 
-                processedCells += global.grid->usedSize;
-                                  
-                //LOG("step duration %f, active cells %d\n", global.gridDefinition->dt, global.grid->usedSize);
+                rt += global.gridDefinition->dt; 
+               
+                godunovMethod(offset, iterations, global.gridDefinition, global.grid);
+                                          
+                g.sync();            
+ 
+                updateProbability(offset, iterations, global.gridDefinition, global.grid);                
+                
+                
+                normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
 
-                if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                    
-                    //g.sync(); LOG("## pre prune active cells %d\n", global.grid->usedSize); g.sync();
-                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
-                    //g.sync();LOG("## post prune active cells %d\n", global.grid->usedSize); g.sync();
+                processedCells += global.grid->usedSize;
+                
+                if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                                                         
+                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);                                                      
                     updateIkNodes(offset, iterations, global.grid);    
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 }
@@ -263,7 +269,6 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
                 stepCount++;
-
             } // while(rt < recordTime)
 
             if (((stepCount-1) % model.outputPeriodSteps != 0) && model.performOutput){ // print size to terminal  
@@ -271,9 +276,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
                 LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);
             }
             
-            if(model.performRecord){ // record PDF
-                LOG("Record PDF (not implemented)\n");
-                // TODO implement snapshoots
+            if(model.performRecord){ // record PDF                
+                takeSnapshoot(&recordIndex, snapshoots, global.grid, tt + mt + rt);   
             }            
             mt += rt;
         }
@@ -287,16 +291,16 @@ __global__ void gbeesKernel(int iterations, Model model, Global global){
             
             // select next measurement
             measurement = &global.measurements[nm+1];            
-            
-            applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);
+     
+            applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);       
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
             pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
             updateIkNodes(offset, iterations, global.grid);    
-            normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
+            normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);        
         }        
     }
     
-    LOG("Time marching complete, processed cells %ld.\n", processedCells);
+    LOG("Time marching complete, processed cells %ld.\n", processedCells);       
 }
 
 /** Initialize cells */
@@ -395,7 +399,7 @@ static __device__ void initializeIkNodes(Grid* grid, Cell* cell, uint32_t usedIn
         if(cell->state[i] < (int)grid->initialExtent[i]){
             uint32_t kIndex = usedIndex + offset;        
             cell->kNodes[i] = kIndex;
-        }  else {            
+        } else {            
             cell->kNodes[i] = NULL_REFERENCE;
         }
         
@@ -512,8 +516,7 @@ static __device__ void normalizeDistribution(int offset, int iterations, double*
         g.sync();
     }                 
        
-    // at the end, the sum of the probability its at globalArray[0]    
-   //LOG("prob sum %1.14e\n", globalArray[0]);
+    // at the end, the sum of the probability its at globalArray[0]       
     
     // update the probability of the cells
     for(int iter=0;iter<iterations;iter++){
@@ -534,17 +537,6 @@ static __device__ void gridBounds(double* output, double* localArray, double* gl
     localArray[threadIdx.x] = boundaryValue;
     
     __syncthreads();
-    
-    // reduction process in shared memory
-    /*
-    for(int s=1;s<blockDim.x;s*=2){
-        int indexDst = 2 * s * threadIdx.x;
-        int indexSrc = indexDst + s;
-        if(indexSrc < blockDim.x){
-            localArray[indexDst] = fn(localArray[indexSrc], localArray[indexDst]);                        
-        }
-        __syncthreads();
-    }*/
     
     // reduction process in shared memory (sequential addressing)
     for(unsigned int s=blockDim.x/2;s>0;s>>=1){
@@ -590,15 +582,15 @@ static __device__ void growGrid(int offset, int iterations, GridDefinition* grid
 static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefinition, Grid* grid, Model* model){
     // grid synchronization
     cg::grid_group g = cg::this_grid();
-    
+
     bool performGrow = cell != NULL && cell->prob >= gridDefinition->threshold;
-    
+   
     if(performGrow) {          
         growGridDireccional(cell,  FORWARD, gridDefinition, grid, model);                
     }    
-    
+   
     g.sync(); // synchronization needed to avoid create duplicated cells
-    
+     
     if(performGrow) {          
         growGridDireccional(cell,  BACKWARD, gridDefinition, grid, model);                
     }     
@@ -608,34 +600,33 @@ static __device__ void growGridFromCell(Cell* cell, GridDefinition* gridDefiniti
     if(performGrow) {         
         growGridEdges(cell,  FORWARD, FORWARD, gridDefinition, grid, model);                
     } 
-    
+   
     g.sync(); // synchronization needed to avoid create duplicated cells
-    
+   
     if(performGrow) { 
         growGridEdges(cell, FORWARD, BACKWARD, gridDefinition, grid, model);    
     }
-    
+     
     g.sync(); // synchronization needed to avoid create duplicated cells
     
     if(performGrow) { 
         growGridEdges(cell, BACKWARD, FORWARD, gridDefinition, grid, model);         
     } 
-    
+   
     g.sync(); // synchronization needed to avoid create duplicated cells
-    
+ 
     if(performGrow) { 
         growGridEdges(cell, BACKWARD, BACKWARD, gridDefinition, grid, model);        
     } 
-    
+
     g.sync(); // synchronization needed to avoid create duplicated cells
 }
 
 /** Grow grid from one cell in one dimension and direction */
 static __device__ void growGridDireccional(Cell* cell, enum Direction direction, GridDefinition* gridDefinition, Grid* grid, Model* model){
-        
     uint32_t nextFaceIndex = 0; // initialized to null reference
     int32_t state[DIM]; // state indexes for the new cells            
-    
+
     for(int dimension=0;dimension<DIM;dimension++){
         if(direction == FORWARD) {
             if(cell->v[dimension] <= 0.0) continue; 
@@ -647,12 +638,12 @@ static __device__ void growGridDireccional(Cell* cell, enum Direction direction,
     
         // create next face if not exists
         if(nextFaceIndex == NULL_REFERENCE){
-            // create new cell key[dimension] = cell->key[dimension]+direction
+            // create new cell key[dimension] = cell->key[dimension]+direction             
             copyKey(cell->state, state);
-            state[dimension] += direction;
+            state[dimension] += direction;           
             createCell(state, gridDefinition, grid, model);
-        }
-    }    
+        }                                
+    }  
 }
 
 /** Grow grid from one cell in one dimension and direction */
@@ -683,13 +674,12 @@ static __device__ void growGridEdges(Cell* cell, enum Direction direction, enum 
 static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition, Grid* grid, Model* model){
     Cell cell;
     
-    // TODO optional performance improvement, move initialization to insertCellConcurrent (or use a callback) and execute only if the cell not exits
-    
     // compute state
     for(int i=0;i<DIM;i++){
-        cell.state[i] = state[i];
-        cell.x[i] = gridDefinition->dx[i] * state[i] + gridDefinition->center[i]; // state value
-        cell.ctu[i] = 0.0;
+        cell.state[i] = state[i]; // state coordinates
+        if(model->useBounds) { // only update the cell state at this point if using bounds
+            cell.x[i] = gridDefinition->dx[i] * state[i] + gridDefinition->center[i]; // state value        
+        }
     }
     
     // filter if out of bounds            
@@ -697,14 +687,29 @@ static __device__ void createCell(int32_t* state, GridDefinition* gridDefinition
         double J = model->callbacks->j(cell.x);    
         if(J<gridDefinition->lo_bound || J > gridDefinition->hi_bound) return;        
     }
-        
-    cell.deleted = false;
-    cell.prob = 0.0; 
-    cell.dcu = 0.0;
-    initializeAdv(gridDefinition, model, &cell);
-    
+           
     // insert cell
-    insertCellConcurrent(&cell, grid);
+    insertCellConcurrent(&cell, grid, gridDefinition, model);
+}
+
+/**
+ * @brief End cell initialization callback
+ * 
+ * @param cell cell pointer
+ * @param gridDefinition grid definition
+ * @param model model
+ */ 
+__device__ void endCellInitialization(Cell* cell, GridDefinition* gridDefinition, Model* model){
+    for(int i=0;i<DIM;i++){
+        cell->ctu[i] = 0.0;
+        if(!model->useBounds) { // if used bounds the state of the cell is already filled
+            cell->x[i] = gridDefinition->dx[i] * cell->state[i] + gridDefinition->center[i]; // state value
+        }
+    }
+    cell->deleted = false;
+    cell->prob = 0.0; 
+    cell->dcu = 0.0;
+    initializeAdv(gridDefinition, model, cell);
 }
 
 /** Prune grid */
@@ -950,7 +955,7 @@ static __device__ void godunovMethod(int offset, int iterations, GridDefinition*
         if(cell != NULL){        
             updateCtu(cell, grid, gridDefinition);
         }
-    }    
+    }        
 }
 
 static __device__ double uPlus(double v){
@@ -966,7 +971,7 @@ static __device__ double fluxLimiter(double th) {
   return fmax(0.0, fmin(min1, 2*th)); 
 }
 
-static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef) {    
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDefinition) {    
     cell->dcu = 0.0;   
     for(int i=0; i<DIM; i++){
         cell->ctu[i] = 0.0;
@@ -989,20 +994,20 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
             // double vUpstream = 0.5*(iCell->v[i] + cell->v[i]); // corrected implementation (valid only for equispaced meshes)
             dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
         }
-        cell->dcu -= (gridDef->dt/gridDef->dx[i])*(dcu_p-dcu_m);             
+        cell->dcu -= (gridDefinition->dt/gridDefinition->dx[i])*(dcu_p-dcu_m);             
     }
 }
 
-static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {         
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDefinition) {         
  
-    for(int i=0; i<DIM; i++){
+   for(int i=0; i<DIM; i++){
         Cell* iCell = getCell(cell->iNodes[i], grid);    
         
         if(iCell == NULL) continue;    
         
-        double flux = gridDef->dt*(cell->prob - iCell->prob) / (2.0 * gridDef->dx[i]);                    
+        double flux = gridDefinition->dt*(cell->prob - iCell->prob) / (2.0 * gridDefinition->dx[i]);                    
         double vUpstream = iCell->v[i];
-       
+
         for(int j=0; j<DIM; j++){
             if(j == i) continue;
             
@@ -1034,7 +1039,7 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
                 (kCell->prob - cell->prob)/(cell->prob - iCell->prob):
                 (-cell->prob)/(cell->prob - iCell->prob);                             
         }       
-        atomicAdd(&iCell->ctu[i], fabs(vUpstream)*(gridDef->dx[i]/gridDef->dt - fabs(vUpstream))*flux*fluxLimiter(th));         
+        atomicAdd(&iCell->ctu[i], fabs(vUpstream)*(gridDefinition->dx[i]/gridDefinition->dt - fabs(vUpstream))*flux*fluxLimiter(th));         
     }   
 }
 
@@ -1051,14 +1056,14 @@ static __device__ void updateProbability(int offset, int iterations, GridDefinit
 }
 
 /** Update probability for one cell */
-static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef){
+static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDefinition){
     cell->prob += cell->dcu;
         
     for(int i=0; i<DIM; i++){
         Cell* iCell = getCell(cell->iNodes[i], grid);
         cell->prob -= (iCell != NULL)?
-            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
-            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);         
+            (gridDefinition->dt / gridDefinition->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
+            (gridDefinition->dt / gridDefinition->dx[i]) * (cell->ctu[i]);         
     }        
     cell->prob = fmax(cell->prob, 0.0);        
 }
@@ -1086,7 +1091,32 @@ static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement
     cell->prob *= prob;
 }
 
+/** Copy device memory */
+static __device__ void parallelMemCopy(void* src, void* dst, size_t size){
+    int i = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;            
+    for (; i<size; i += BLOCKS * THREADS_PER_BLOCK) {
+        ((char*)dst)[i] = ((char*)src)[i];
+    }
+}
+
+/** Take snapshoot */
+static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, double time){   
+    // copy usedList
+    parallelMemCopy(grid->usedList, snapshoots[*recordIndex].usedList, grid->usedSize * sizeof(UsedListEntry));
+    // copy heap
+    parallelMemCopy(grid->heap, snapshoots[*recordIndex].heap, grid->size * sizeof(Cell));
+    
+    // update used size and time
+    if(threadIdx.x == 0 && blockIdx.x == 0){
+        snapshoots[*recordIndex].time = time;
+        snapshoots[*recordIndex].usedSize = grid->usedSize;    
+    }
+    
+    // increment record index
+    *recordIndex = *recordIndex + 1;       
+}
+
 /**
  * @brief Dummy kernel to check maximum teoretical concurrent threads
  */
-__global__ void dummyKernel(int iterations, Model model, Global global){}
+__global__ void dummyKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){}

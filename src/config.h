@@ -21,7 +21,4 @@
 /** Size of the hashtable with respect the maximum number of cells*/
 #define HASH_TABLE_RATIO 2
 
-/** Result file name*/
-#define RESULT_FILE_NAME "output.txt"
-
 #endif
