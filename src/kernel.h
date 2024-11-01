@@ -65,4 +65,14 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
  */
 __global__ void dummyKernel(int iterations, Model model, Global global, Snapshoot* snapshoots);
 
+
+/**
+ * @brief End cell initialization callback
+ * 
+ * @param cell cell pointer
+ * @param gridDefinition grid definition
+ * @param model model
+ */ 
+__device__ void endCellInitialization(Cell* cell, GridDefinition* gridDefinition, Model* model);
+
 #endif

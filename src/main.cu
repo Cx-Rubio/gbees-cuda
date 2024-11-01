@@ -147,6 +147,9 @@ static void executeGbees(int device){
     global.gridDefinition = gridDefinitionDevice;
     allocGlobalDevice(&global, blocks, iterations);
         
+    // configure cache preferences
+    cudaFuncSetCacheConfig(gbeesKernel, cudaFuncCachePreferL1);
+        
     // check if the block count can fit in the GPU
     size_t staticSharedMemory = requiredSharedMemory();
     size_t dynamicSharedMemory = 0;

@@ -2,6 +2,7 @@
 
 #include "grid.h"
 #include "config.h"
+#include "kernel.h"
 #include "macro.h"
 #include <string.h>
 #include <cooperative_groups.h>
@@ -300,7 +301,9 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
  * @param dst destination
  */
 __host__ __device__ void copyKey(int32_t* src, int32_t* dst){
-    memcpy(dst, src, sizeof(int32_t)*DIM);
+    for(int i=0;i<DIM;i++){
+        dst[i] = src[i];
+    }    
 }
 
 /**  --- Private functions implementation (device) ---  */
@@ -331,9 +334,11 @@ static __device__ bool equalState(int32_t* state1, int32_t* state2){
     return true;
 }
 
-/** Copy cell contents */
+/** Copy cell contents (requires __align__(8) in the Cell struct declaration)*/
 static __device__ void copyCell(Cell* src, Cell* dst){
-    memcpy(dst, src, sizeof(Cell));
+    for(int i=0; i< sizeof(Cell)/8; i++){
+        ((uint64_t*)dst)[i] = ((const uint64_t*)src)[i];   
+    }    
 }
 
 /** --- Grid operations  (device)  --- */
@@ -386,11 +391,13 @@ __device__ void insertCell(Cell* cell, Grid* grid){
  * 
  * @param cell new cell pointer
  * @param grid grid pointer
+ * @param gridDefinition grid definition for callback to finish cell initialization
+ * @param model model for callback to finish cell initialization
  */
-__device__ void insertCellConcurrent(Cell* cell, Grid* grid){    
+__device__ void insertCellConcurrent(Cell* cell, Grid* grid, GridDefinition* gridDefinition, Model* model){    
     uint32_t hash = computeHash(cell->state);   
     uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
-    
+
     for(uint32_t counter = 0; counter < capacity; counter++){
         uint32_t hashIndex = (hash + counter) % capacity;                
          
@@ -424,13 +431,18 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid){
             grid->usedList[usedIndex].heapIndex = grid->freeList[ freeIndex ];
             grid->usedList[usedIndex].hashTableIndex = hashIndex;
             
+            // end cell initialization
+            endCellInitialization(cell, gridDefinition, model);            
+            
             // update heap content
             Cell* dstCell = grid->heap + grid->usedList[usedIndex].heapIndex;
-            
+
             copyCell(cell, dstCell);             
+
             return;
         }     
-    }    
+    } 
+   
 } 
 
 
