@@ -100,10 +100,14 @@ static void executeGbees(int device){
     int blocks = BLOCKS;
     int iterations = CELLS_PER_THREAD;    
         
-    // obtain model
+    
     Model model;
+    
+    // configure model
     configureLorenz3D(&model);
     //configurePcr3bp(&model);
+    //configureGridPcr3bp(&model);
+    
     int numMeasurements = model.numMeasurements;
     int numDistRecorded = model.numDistRecorded;
     bool performRecord = model.performRecord;

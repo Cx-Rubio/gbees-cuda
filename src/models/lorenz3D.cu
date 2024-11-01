@@ -38,7 +38,7 @@ void configureLorenz3D(Model* model){
     model->deletePeriodSteps = 20;   // Number of steps per deletion procedure
     model->outputPeriodSteps = 20;   // Number of steps per output to terminal
     model->performOutput = true;     // Write info to terminal
-    model->performRecord = true;     // Write PDFs to .txt file
+    model->performRecord = false;    // Write PDFs to .txt file
     model->performMeasure = true;    // Take discrete measurement updates
     model->useBounds = false;        // Add inadmissible regions to grid
     model->configureGrid = &configureGridLorenz3D; // Grid configuration callback

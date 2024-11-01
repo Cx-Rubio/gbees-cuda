@@ -74,10 +74,10 @@ static __device__ bool fluxFrom(Cell* cell, enum Direction direction, int dimens
 static __device__ void godunovMethod(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Compute the donor cell upwind value for each grid cell */
-static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef);
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDefinition);
 
 /** Compute the corner transport upwind values in each direction */
-static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef);
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDefinition);
 
 /** Compute flux from the left */
 static __device__ double uPlus(double v);
@@ -92,7 +92,7 @@ static __device__ double fluxLimiter(double th);
 static __device__ void updateProbability(int offset, int iterations, GridDefinition* gridDefinition, Grid* grid);
 
 /** Update probability for one cell */
-static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef);
+static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDefinition);
 
 /** Apply measurement */
 static __device__ void applyMeasurement(int offset, int iterations, Measurement* measurement, GridDefinition* gridDefinition, Grid* grid, Model* model);
@@ -174,7 +174,7 @@ static __device__ uint32_t getIndex(int offset, int iteration){
 __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
- 
+
     // shared memory for reduction processes
     __shared__ double localArray[THREADS_PER_BLOCK];
     
@@ -235,7 +235,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
                     return;
                 }
                
-                updateIkNodes(offset, iterations, global.grid);                                     
+                updateIkNodes(offset, iterations, global.grid);  
+                                   
                 checkCflCondition(offset, iterations, localArray, global.gridDefinition, &global);             
                                   
                 if(threadIdx.x == 0 && blockIdx.x == 0){
@@ -244,19 +245,21 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
  
                 g.sync();
                 
-                rt += global.gridDefinition->dt;                
+                rt += global.gridDefinition->dt; 
+               
                 godunovMethod(offset, iterations, global.gridDefinition, global.grid);
                                           
                 g.sync();            
  
                 updateProbability(offset, iterations, global.gridDefinition, global.grid);                
+                
+                
                 normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
 
                 processedCells += global.grid->usedSize;
                 
-                if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                                        
-                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);                                  
-                    
+                if (stepCount % model.deletePeriodSteps == 0) { // deletion procedure                                                         
+                    pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);                                                      
                     updateIkNodes(offset, iterations, global.grid);    
                     normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
                 }
@@ -266,7 +269,6 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
                 stepCount++;
-
             } // while(rt < recordTime)
 
             if (((stepCount-1) % model.outputPeriodSteps != 0) && model.performOutput){ // print size to terminal  
@@ -289,8 +291,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
             
             // select next measurement
             measurement = &global.measurements[nm+1];            
-            
-            applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);            
+     
+            applyMeasurement(offset, iterations, measurement, global.gridDefinition, global.grid, &model);       
             normalizeDistribution(offset, iterations, localArray, global.reductionArray, global.grid);
             pruneGrid(offset, iterations, global.gridDefinition, global.grid, &global);
             updateIkNodes(offset, iterations, global.grid);    
@@ -298,7 +300,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
         }        
     }
     
-    LOG("Time marching complete, processed cells %ld.\n", processedCells);        
+    LOG("Time marching complete, processed cells %ld.\n", processedCells);       
 }
 
 /** Initialize cells */
@@ -953,7 +955,7 @@ static __device__ void godunovMethod(int offset, int iterations, GridDefinition*
         if(cell != NULL){        
             updateCtu(cell, grid, gridDefinition);
         }
-    }    
+    }        
 }
 
 static __device__ double uPlus(double v){
@@ -969,7 +971,7 @@ static __device__ double fluxLimiter(double th) {
   return fmax(0.0, fmin(min1, 2*th)); 
 }
 
-static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef) {    
+static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDefinition) {    
     cell->dcu = 0.0;   
     for(int i=0; i<DIM; i++){
         cell->ctu[i] = 0.0;
@@ -992,20 +994,20 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
             // double vUpstream = 0.5*(iCell->v[i] + cell->v[i]); // corrected implementation (valid only for equispaced meshes)
             dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
         }
-        cell->dcu -= (gridDef->dt/gridDef->dx[i])*(dcu_p-dcu_m);             
+        cell->dcu -= (gridDefinition->dt/gridDefinition->dx[i])*(dcu_p-dcu_m);             
     }
 }
 
-static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef) {         
+static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDefinition) {         
  
-    for(int i=0; i<DIM; i++){
+   for(int i=0; i<DIM; i++){
         Cell* iCell = getCell(cell->iNodes[i], grid);    
         
         if(iCell == NULL) continue;    
         
-        double flux = gridDef->dt*(cell->prob - iCell->prob) / (2.0 * gridDef->dx[i]);                    
+        double flux = gridDefinition->dt*(cell->prob - iCell->prob) / (2.0 * gridDefinition->dx[i]);                    
         double vUpstream = iCell->v[i];
-       
+
         for(int j=0; j<DIM; j++){
             if(j == i) continue;
             
@@ -1037,7 +1039,7 @@ static __device__ void updateCtu(Cell* cell, Grid* grid, GridDefinition* gridDef
                 (kCell->prob - cell->prob)/(cell->prob - iCell->prob):
                 (-cell->prob)/(cell->prob - iCell->prob);                             
         }       
-        atomicAdd(&iCell->ctu[i], fabs(vUpstream)*(gridDef->dx[i]/gridDef->dt - fabs(vUpstream))*flux*fluxLimiter(th));         
+        atomicAdd(&iCell->ctu[i], fabs(vUpstream)*(gridDefinition->dx[i]/gridDefinition->dt - fabs(vUpstream))*flux*fluxLimiter(th));         
     }   
 }
 
@@ -1054,14 +1056,14 @@ static __device__ void updateProbability(int offset, int iterations, GridDefinit
 }
 
 /** Update probability for one cell */
-static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDef){
+static __device__ void updateProbabilityCell(Cell* cell, Grid* grid, GridDefinition* gridDefinition){
     cell->prob += cell->dcu;
         
     for(int i=0; i<DIM; i++){
         Cell* iCell = getCell(cell->iNodes[i], grid);
         cell->prob -= (iCell != NULL)?
-            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
-            (gridDef->dt / gridDef->dx[i]) * (cell->ctu[i]);         
+            (gridDefinition->dt / gridDefinition->dx[i]) * (cell->ctu[i] - iCell->ctu[i]):
+            (gridDefinition->dt / gridDefinition->dx[i]) * (cell->ctu[i]);         
     }        
     cell->prob = fmax(cell->prob, 0.0);        
 }
