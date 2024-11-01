@@ -16,6 +16,7 @@
 #include "models.h"
 #include "models/lorenz3D.h"
 #include "models/pcr3bp.h"
+#include "models/cr3bp.h"
 #include <cuda_profiler_api.h>
 
 /** Register ctrl-C handler */
@@ -106,7 +107,7 @@ static void executeGbees(int device){
     // configure model
     configureLorenz3D(&model);
     //configurePcr3bp(&model);
-    //configureGridPcr3bp(&model);
+    //configureCr3bp(&model);
     
     int numMeasurements = model.numMeasurements;
     int numDistRecorded = model.numDistRecorded;
