@@ -104,7 +104,7 @@ static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement
 static __device__ void parallelMemCopy(void* src, void* dst, size_t size);
 
 /** Take snapshoot */
-static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, double time);
+static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, Model* model, double time);
 
 /** Get offset index to iterate cells */
 static __device__ int getOffset();
@@ -212,7 +212,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
         }
         
         if(model.performRecord){ // record PDF            
-            takeSnapshoot(&recordIndex, snapshoots, global.grid, tt);           
+            takeSnapshoot(&recordIndex, snapshoots, global.grid, &model, tt);
         }
         
         // propagate probability distribution until the next measurement
@@ -277,7 +277,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
             }
             
             if(model.performRecord){ // record PDF                
-                takeSnapshoot(&recordIndex, snapshoots, global.grid, tt + mt + rt);   
+                takeSnapshoot(&recordIndex, snapshoots, global.grid, &model, tt + mt + rt);
             }            
             mt += rt;
         }
@@ -1100,16 +1100,23 @@ static __device__ void parallelMemCopy(void* src, void* dst, size_t size){
 }
 
 /** Take snapshoot */
-static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, double time){   
-    // copy usedList
-    parallelMemCopy(grid->usedList, snapshoots[*recordIndex].usedList, grid->usedSize * sizeof(UsedListEntry));
-    // copy heap
-    parallelMemCopy(grid->heap, snapshoots[*recordIndex].heap, grid->size * sizeof(Cell));
+static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, Model* model, double time){    
+    // check if should perform the record according to the record divider
+    int mod = *recordIndex % model->recordDivider;
+    if(mod == model->recordSelected) {
+        // compute destination index
+        int snapshootIndex = *recordIndex / model->recordDivider;
+
+        // copy usedList
+        parallelMemCopy(grid->usedList, snapshoots[snapshootIndex].usedList, grid->usedSize * sizeof(UsedListEntry));
+        // copy heap
+        parallelMemCopy(grid->heap, snapshoots[snapshootIndex].heap, grid->size * sizeof(Cell));
     
-    // update used size and time
-    if(threadIdx.x == 0 && blockIdx.x == 0){
-        snapshoots[*recordIndex].time = time;
-        snapshoots[*recordIndex].usedSize = grid->usedSize;    
+        // update used size and time
+        if(threadIdx.x == 0 && blockIdx.x == 0){
+            snapshoots[snapshootIndex].time = time;
+            snapshoots[snapshootIndex].usedSize = grid->usedSize;    
+        }    
     }
     
     // increment record index

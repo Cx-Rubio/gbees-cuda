@@ -13,6 +13,7 @@ namespace cg = cooperative_groups;
 /**  Private functions declaration (host) */
 static void initializeHashtable(HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t* initialExtent, int32_t* key, uint32_t gridSize, uint32_t* usedSizePtr, int level);
 static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* usedList, uint32_t gridSize, uint32_t* usedSizePtr);
+static int numberOfSnapshoots(Model* model);
 
 /**  Private functions declaration (device) */
 static __host__ __device__ uint32_t computeHash(int32_t* state);
@@ -178,13 +179,11 @@ void initializeGridDevice(Grid* grid, Grid* gridDevice, GridDefinition* gridDefi
  * @brief Alloc snapshoots in host memory
  * 
  * @param snapshoots snapshoots host pointer
- * @param performRecord if should perform record
- * @param numMeasurements number of measurements
- * @param numDistRecorded number of distributions recorded per measurement
+ * @param model model pointer
  */
-void allocSnapshootsHost(Snapshoot** snapshoots, bool performRecord, int numMeasurements, int numDistRecorded){
-    if(performRecord){    
-        int numSnapshoots = numMeasurements * numDistRecorded;      
+void allocSnapshootsHost(Snapshoot** snapshoots, Model* model){
+    if(model->performRecord){    
+        int numSnapshoots = numberOfSnapshoots(model);      
         *snapshoots = (Snapshoot*)malloc( numSnapshoots * sizeof(Snapshoot)); 
     }
 }
@@ -195,13 +194,11 @@ void allocSnapshootsHost(Snapshoot** snapshoots, bool performRecord, int numMeas
  * @param gridSize maximum grid size
  * @param snapshoots snapshoots host pointer
  * @param snapshootsDevice snapshoots device pointer
- * @param performRecord if should perform record
- * @param numMeasurements number of measurements
- * @param numDistRecorded number of distributions recorded per measurement
+ * @param model model pointer
  */
-void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot** snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded){
-    if(performRecord){     
-        int numSnapshoots = numMeasurements * numDistRecorded;                   
+void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot** snapshootsDevice, Model* model){
+    if(model->performRecord){     
+        int numSnapshoots = numberOfSnapshoots(model);                   
         for(int i=0; i<numSnapshoots; i++){            
             HANDLE_CUDA(cudaMalloc(&snapshoots[i].usedList, gridSize * sizeof(UsedListEntry)));
             HANDLE_CUDA(cudaMalloc(&snapshoots[i].heap, gridSize * sizeof(Cell)));            
@@ -215,13 +212,11 @@ void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot**
  * 
  * @param snapshoots snapshoots host pointer
  * @param snapshootsDevice snapshoots device pointer
- * @param performRecord if should perform record
- * @param numMeasurements number of measurements
- * @param numDistRecorded number of distributions recorded per measurement
+ * @param model model pointer
  */
-void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded){
-    if(performRecord){     
-        int numSnapshoots = numMeasurements * numDistRecorded;  
+void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model){
+    if(model->performRecord){     
+        int numSnapshoots = numberOfSnapshoots(model);
         // copy snapshoots
         HANDLE_CUDA( cudaMemcpy( snapshootsDevice, snapshootsHost, numSnapshoots * sizeof(Snapshoot), cudaMemcpyHostToDevice) );
     }
@@ -231,10 +226,10 @@ void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshoots
  * @brief Free snapshoots host memory
  * 
  * @param snapshoots snapshoots host pointer
- * @param performRecord if should perform record
+ * @param model model pointer
  */
-void freeSnapshootsHost(Snapshoot* snapshoots, bool performRecord){
-    if(performRecord) free(snapshoots);
+void freeSnapshootsHost(Snapshoot* snapshoots, Model* model){
+    if(model->performRecord) free(snapshoots);
 }
 
 /**
@@ -242,11 +237,11 @@ void freeSnapshootsHost(Snapshoot* snapshoots, bool performRecord){
  * 
  * @param snapshoots snapshoots host pointer
  * @param snapshootsDevice snapshoots device pointer
- * @param performRecord if should perform record
+ * @param model model pointer
  */
-void freeSnapshootsDevice(Snapshoot* snapshoots, Snapshoot* snapshootsDevice, bool performRecord, int numMeasurements, int numDistRecorded){
-    if(performRecord){        
-        int numSnapshoots = numMeasurements * numDistRecorded;        
+void freeSnapshootsDevice(Snapshoot* snapshoots, Snapshoot* snapshootsDevice, Model* model){
+    if(model->performRecord){        
+        int numSnapshoots = numberOfSnapshoots(model);
         for(int i=0; i<numSnapshoots; i++){
             HANDLE_CUDA(cudaFree(snapshoots[i].usedList));
             HANDLE_CUDA(cudaFree(snapshoots[i].heap));
@@ -294,6 +289,14 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
         }
     }            
 } 
+
+/** Compute the required number of snapshoots of a model */
+static int numberOfSnapshoots(Model* model){
+    int total = model->numMeasurements * model->numDistRecorded;
+    int ret = total/model->recordDivider;
+    if(model->recordSelected < total % model->recordDivider) ++ret;
+    return ret;
+}
 
 /**
  * @brief Copy cell key (state indexes)

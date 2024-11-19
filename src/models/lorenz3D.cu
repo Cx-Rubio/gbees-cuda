@@ -34,6 +34,8 @@ void configureLorenz3D(Model* model){
     model->mFile = mFileLorenz3D;    // Measurement file        
     model->mDim = 1;                 // Measurement dimension
     model->numDistRecorded = 5;      // Number of distributions recorded per measurement
+    model->recordDivider = 1;        // Use a value greater than 1 to record only a fraction of the total distributions
+    model->recordSelected = 0;       // Select which fraction of the total records are recorded
     model->numMeasurements = 2;      // Number of measurements
     model->deletePeriodSteps = 20;   // Number of steps per deletion procedure
     model->outputPeriodSteps = 20;   // Number of steps per output to terminal

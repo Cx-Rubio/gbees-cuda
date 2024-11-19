@@ -32,8 +32,15 @@ static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsD
     Snapshoot snapshoot;
     int index = nr + nm * model->numDistRecorded;
     
+    // check if should be generated
+    int mod = index % model->recordDivider;
+    if(mod != model->recordSelected) return;
+
+    // compute source index
+    int snapshootIndex = index / model->recordDivider;
+
     // copy snapshoot from device to host
-    HANDLE_CUDA( cudaMemcpy( &snapshoot, &snapshootsDevice[index], sizeof(Snapshoot), cudaMemcpyDeviceToHost) );
+    HANDLE_CUDA( cudaMemcpy( &snapshoot, &snapshootsDevice[snapshootIndex], sizeof(Snapshoot), cudaMemcpyDeviceToHost) );
     
     // alloc host memory
     UsedListEntry* usedList = (UsedListEntry*)malloc(gridSize * sizeof(UsedListEntry));
@@ -51,7 +58,7 @@ static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsD
     snprintf(fileName, sizeof(fileName), "%s/P%d_pdf_%d.txt", model->pDir, nm, nr);    
     FILE* fd = fopen(fileName, "w");
     assertNotNull(fd, IO_ERROR, "Error opening output file");
-    
+        
     log("Record grid for time %f with %d cells to file %s\n", snapshoot.time, snapshoot.usedSize, fileName);
     
     // record time

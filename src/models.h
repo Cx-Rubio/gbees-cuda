@@ -8,6 +8,7 @@
 
 /** Forward declaration*/
 struct Measurement;
+struct GridDefinition;
 
 /** Model device callbacks */
 typedef struct {
@@ -25,6 +26,8 @@ struct Model {
   void (*configureGrid)(GridDefinition*, Measurement*); // Ask to the model to define the grid configuration
   int mDim;       // Measurement model dimension (DIM_h)
   int numDistRecorded;        // Number of distributions recorded per measurement
+  int recordDivider;    // Use a value greater than 1 to record only a fraction of the total distributions
+  int recordSelected;   // Select which fraction of the total records are recorded
   int numMeasurements;     // Number of measurements
   int deletePeriodSteps;       // Number of steps per deletion procedure
   int outputPeriodSteps;      // Number of steps per output to terminal

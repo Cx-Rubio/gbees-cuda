@@ -96,8 +96,7 @@ static void executeGbees(int device){
     // grid configuration
     int threads = THREADS_PER_BLOCK;
     int blocks = BLOCKS;
-    int iterations = CELLS_PER_THREAD;    
-        
+    int iterations = CELLS_PER_THREAD;
     
     Model model;
     
@@ -106,11 +105,8 @@ static void executeGbees(int device){
     //configurePcr3bp(&model);
     //configureCr3bp(&model);
     
-    int numMeasurements = model.numMeasurements;
-    int numDistRecorded = model.numDistRecorded;
-    bool performRecord = model.performRecord;
-        
     // allocate measurements memory
+    int numMeasurements = model.numMeasurements;
     Measurement* measurementsHost = allocMeasurementsHost(numMeasurements);
     Measurement* measurementsDevice = allocMeasurementsDevice(numMeasurements);
     
@@ -138,9 +134,9 @@ static void executeGbees(int device){
     // allocate snapshoots
     Snapshoot *snapshootsHost; // host
     Snapshoot *snapshootsDevice; // device
-    allocSnapshootsHost(&snapshootsHost, performRecord, numMeasurements, numDistRecorded);
-    allocSnapshootsDevice(gridDefinitionHost.maxCells, snapshootsHost, &snapshootsDevice, performRecord, numMeasurements, numDistRecorded);
-    initializeSnapshootsDevice(snapshootsHost, snapshootsDevice, performRecord, numMeasurements, numDistRecorded);
+    allocSnapshootsHost(&snapshootsHost, &model);
+    allocSnapshootsDevice(gridDefinitionHost.maxCells, snapshootsHost, &snapshootsDevice, &model);
+    initializeSnapshootsDevice(snapshootsHost, snapshootsDevice, &model);
     
     // global memory for kernel
     Global global; // global memory
@@ -170,8 +166,8 @@ static void executeGbees(int device){
     cudaDeviceSynchronize();    
 
     // free device memory    
-    freeSnapshootsDevice(snapshootsHost, snapshootsDevice, performRecord, numMeasurements, numDistRecorded);
-    freeSnapshootsHost(snapshootsHost, performRecord);
+    freeSnapshootsDevice(snapshootsHost, snapshootsDevice, &model);
+    freeSnapshootsHost(snapshootsHost, &model);
     freeGridDevice(&gridHost, gridDevice);    
     freeGridDefinition(gridDefinitionDevice);
     freeMeasurementsDevice(measurementsDevice);

@@ -38,6 +38,8 @@ void configurePcr3bp(Model* model){
     model->mFile = mFilePcr3bp;    // Measurement file        
     model->mDim = 3;                 // Measurement dimension
     model->numDistRecorded = 8;      // Number of distributions recorded per measurement
+    model->recordDivider = 1;        // Use a value greater than 1 to record only a fraction of the total distributions
+    model->recordSelected = 0;       // Select which fraction of the total records are recorded
     model->numMeasurements = 4;      // Number of measurements
     model->deletePeriodSteps = 20;   // Number of steps per deletion procedure
     model->outputPeriodSteps = 20;   // Number of steps per output to terminal
