@@ -31,7 +31,7 @@ static void printUsageAndExit(const char* command);
 static void executeGbees(int device);
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global, Snapshoot*), size_t sharedMemory, int device);
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global, Snapshot*), size_t sharedMemory, int device);
 
 /**
  * @brief Main function 
@@ -131,12 +131,12 @@ static void executeGbees(int device){
     allocGridDevice(gridDefinitionHost.maxCells, &gridHost, &gridDevice);
     initializeGridDevice(&gridHost, gridDevice, &gridDefinitionHost, &measurementsHost[0]);
     
-    // allocate snapshoots
-    Snapshoot *snapshootsHost; // host
-    Snapshoot *snapshootsDevice; // device
-    allocSnapshootsHost(&snapshootsHost, &model);
-    allocSnapshootsDevice(gridDefinitionHost.maxCells, snapshootsHost, &snapshootsDevice, &model);
-    initializeSnapshootsDevice(snapshootsHost, snapshootsDevice, &model);
+    // allocate snapshots
+    Snapshot *snapshotsHost; // host
+    Snapshot *snapshotsDevice; // device
+    allocSnapshotsHost(&snapshotsHost, &model);
+    allocSnapshotsDevice(gridDefinitionHost.maxCells, snapshotsHost, &snapshotsDevice, &model);
+    initializeSnapshotsDevice(snapshotsHost, snapshotsDevice, &model);
     
     // global memory for kernel
     Global global; // global memory
@@ -153,21 +153,21 @@ static void executeGbees(int device){
     
     log("\n -- Launch kernel with %d blocks of %d threads -- \n", blocks, threads);      
     
-    void *kernelArgs[] = { &iterations, &model, &global, &snapshootsDevice};
+    void *kernelArgs[] = { &iterations, &model, &global, &snapshotsDevice};
     dim3 dimBlock(threads, 1, 1);
     dim3 dimGrid(blocks, 1, 1);        
     cudaLaunchCooperativeKernel((void*)gbeesKernel, dimGrid, dimBlock, kernelArgs, dynamicSharedMemory);
     checkKernelError();
     
     if(model.performRecord){
-        recordDistributions(snapshootsHost, snapshootsDevice, &model, &gridHost, &gridDefinitionHost);        
+        recordDistributions(snapshotsHost, snapshotsDevice, &model, &gridHost, &gridDefinitionHost);
     }
   
     cudaDeviceSynchronize();    
 
     // free device memory    
-    freeSnapshootsDevice(snapshootsHost, snapshootsDevice, &model);
-    freeSnapshootsHost(snapshootsHost, &model);
+    freeSnapshotsDevice(snapshotsHost, snapshotsDevice, &model);
+    freeSnapshotsHost(snapshotsHost, &model);
     freeGridDevice(&gridHost, gridDevice);    
     freeGridDefinition(gridDefinitionDevice);
     freeMeasurementsDevice(measurementsDevice);
@@ -179,7 +179,7 @@ static void executeGbees(int device){
 }
 
 /** Check if the number of kernel colaborative blocks fits in the GPU device */
-static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global, Snapshoot*), size_t dynamicsSharedMemory, int device){      
+static void checkCooperativeKernelSize(int blocks, int threads, void (*kernel)(int, Model, Global, Snapshot*), size_t dynamicsSharedMemory, int device){
     cudaDeviceProp prop;
     int numBlocksPerSm = 0;
     int numBlocksPerSmLimit = 0;

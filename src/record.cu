@@ -5,31 +5,31 @@
 #include "macro.h"
 
 /** Record one cell */
-static void recordCell(Cell* cell, FILE* fd);
+static void recordCell(SnapshotCell* cell, FILE* fd);
 
 /** Record one distribution */
-static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, int gridSize, int nm, int nr, double threshold);
+static void recordDistribution(Snapshot* snapshotsHost, Snapshot* snapshotsDevice, Model* model, int gridSize, int nm, int nr, double threshold);
 
 /**
  * @brief Record distributions
  * 
- * @param snapshootsHost snapshoots host pointer
- * @param snapshootsDevice snapshoots device pointer
+ * @param snapshotsHost snapshots host pointer
+ * @param snapshotsDevice snapshots device pointer
  * @param model the model
  * @param grid the grid
  * @param gridDefinition grid definition
  */
-void recordDistributions(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, Grid* grid, GridDefinition* gridDefinition){
+void recordDistributions(Snapshot* snapshotsHost, Snapshot* snapshotsDevice, Model* model, Grid* grid, GridDefinition* gridDefinition){
     for(int nm =0; nm < model->numMeasurements; nm++) {
         for(int nr=0; nr < model->numDistRecorded; nr++) {
-            recordDistribution(snapshootsHost, snapshootsDevice, model, grid->size, nm, nr, gridDefinition->threshold);
+            recordDistribution(snapshotsHost, snapshotsDevice, model, grid->size, nm, nr, gridDefinition->threshold);
         }
     }
 }
 
 /** Record one distribution */
-static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, int gridSize, int nm, int nr, double threshold){
-    Snapshoot snapshoot;
+static void recordDistribution(Snapshot* snapshotsHost, Snapshot* snapshotsDevice, Model* model, int gridSize, int nm, int nr, double threshold){
+    Snapshot snapshot;
     int index = nr + nm * model->numDistRecorded;
     
     // check if should be generated
@@ -37,21 +37,21 @@ static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsD
     if(mod != model->recordSelected) return;
 
     // compute source index
-    int snapshootIndex = index / model->recordDivider;
+    int snapshotIndex = index / model->recordDivider;
 
-    // copy snapshoot from device to host
-    HANDLE_CUDA( cudaMemcpy( &snapshoot, &snapshootsDevice[snapshootIndex], sizeof(Snapshoot), cudaMemcpyDeviceToHost) );
+    // copy snapshot from device to host
+    HANDLE_CUDA( cudaMemcpy( &snapshot, &snapshotsDevice[snapshotIndex], sizeof(Snapshot), cudaMemcpyDeviceToHost) );
     
     // alloc host memory
     UsedListEntry* usedList = (UsedListEntry*)malloc(gridSize * sizeof(UsedListEntry));
-    Cell* heap = (Cell*)malloc(gridSize * sizeof(Cell));
+    SnapshotCell* heap = (SnapshotCell*)malloc(gridSize * sizeof(SnapshotCell));
     
     assertNotNull(usedList, MALLOC_ERROR, "Error allocating host memory for record distribution");
     assertNotNull(heap, MALLOC_ERROR, "Error allocating host memory for record distribution");
     
-    // copy snapshoot from device to host
-    HANDLE_CUDA( cudaMemcpy( usedList, snapshoot.usedList, gridSize * sizeof(UsedListEntry), cudaMemcpyDeviceToHost) );
-    HANDLE_CUDA( cudaMemcpy( heap, snapshoot.heap, gridSize * sizeof(Cell), cudaMemcpyDeviceToHost) );
+    // copy snapshot from device to host
+    HANDLE_CUDA( cudaMemcpy( usedList, snapshot.usedList, gridSize * sizeof(UsedListEntry), cudaMemcpyDeviceToHost) );
+    HANDLE_CUDA( cudaMemcpy( heap, snapshot.heap, gridSize * sizeof(SnapshotCell), cudaMemcpyDeviceToHost) );
     
     // output file
     char fileName[200];        
@@ -59,15 +59,15 @@ static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsD
     FILE* fd = fopen(fileName, "w");
     assertNotNull(fd, IO_ERROR, "Error opening output file");
         
-    log("Record grid for time %f with %d cells to file %s\n", snapshoot.time, snapshoot.usedSize, fileName);
+    log("Record grid for time %f with %d cells to file %s\n", snapshot.time, snapshot.usedSize, fileName);
     
     // record time
-    fprintf(fd, "%f\n", snapshoot.time);
+    fprintf(fd, "%f\n", snapshot.time);
     
     // record cells
-    for(uint32_t usedIndex = 0; usedIndex < snapshoot.usedSize; usedIndex++){
+    for(uint32_t usedIndex = 0; usedIndex < snapshot.usedSize; usedIndex++){
         uint32_t heapIndex = usedList[usedIndex].heapIndex;
-        Cell* cell = &heap[heapIndex];
+        SnapshotCell* cell = &heap[heapIndex];
         if(cell->prob > threshold){
             recordCell(&heap[heapIndex], fd);                    
         } 
@@ -81,7 +81,7 @@ static void recordDistribution(Snapshoot* snapshootsHost, Snapshoot* snapshootsD
 }
 
 /** Record one cell */
-static void recordCell(Cell* cell, FILE* fd){    
+static void recordCell(SnapshotCell* cell, FILE* fd){
     fprintf(fd, "%.10e", cell->prob);
     for (int i=0; i<DIM; i++) {
         fprintf(fd, " %.10e", cell->x[i]);

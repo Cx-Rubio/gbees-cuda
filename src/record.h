@@ -10,12 +10,12 @@
 /**
  * @brief Record distributions
  * 
- * @param snapshootsHost snapshoots host pointer
- * @param snapshootsDevice snapshoots device pointer
+ * @param snapshotsHost snapshots host pointer
+ * @param snapshotsDevice snapshots device pointer
  * @param model the model
  * @param grid the grid
  * @param gridDefinition grid definition
  */
-void recordDistributions(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model, Grid* grid, GridDefinition* gridDefinition);
+void recordDistributions(Snapshot* snapshotsHost, Snapshot* snapshotsDevice, Model* model, Grid* grid, GridDefinition* gridDefinition);
 
 #endif

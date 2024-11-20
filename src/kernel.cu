@@ -103,8 +103,11 @@ static __device__ void applyMeasurementCell(Cell* cell, Measurement* measurement
 /** Copy device memory */
 static __device__ void parallelMemCopy(void* src, void* dst, size_t size);
 
-/** Take snapshoot */
-static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, Model* model, double time);
+/** Parallel copy of the snapshot cells */
+static __device__ void parallelSnapshotCellsCopy(int offset, int iterations, Cell* src, SnapshotCell* dst);
+
+/** Take snapshot */
+static __device__ void takeSnapshot(int offset, int iterations, int* recordIndex, Snapshot* snapshots, Grid* grid, Model* model, double time);
 
 /** Get offset index to iterate cells */
 static __device__ int getOffset();
@@ -171,7 +174,7 @@ static __device__ uint32_t getIndex(int offset, int iteration){
  * @param model the model
  * @param global global memory data
  */
-__global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){
+__global__ void gbeesKernel(int iterations, Model model, Global global, Snapshot* snapshots){
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
 
@@ -212,7 +215,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
         }
         
         if(model.performRecord){ // record PDF            
-            takeSnapshoot(&recordIndex, snapshoots, global.grid, &model, tt);
+            takeSnapshot(offset, iterations, &recordIndex, snapshots, global.grid, &model, tt);
         }
         
         // propagate probability distribution until the next measurement
@@ -277,7 +280,7 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshoo
             }
             
             if(model.performRecord){ // record PDF                
-                takeSnapshoot(&recordIndex, snapshoots, global.grid, &model, tt + mt + rt);
+                takeSnapshot(offset, iterations, &recordIndex, snapshots, global.grid, &model, tt + mt + rt);
             }            
             mt += rt;
         }
@@ -1099,23 +1102,35 @@ static __device__ void parallelMemCopy(void* src, void* dst, size_t size){
     }
 }
 
-/** Take snapshoot */
-static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Grid* grid, Model* model, double time){    
+/** Parallel copy of the snapshot cells */
+static __device__ void parallelSnapshotCellsCopy(int offset, int iterations, Cell* src, SnapshotCell* dst){
+    for(int iter=0;iter<iterations;iter++){
+        int index = getIndex(offset, iter);
+        dst[index].prob = src[index].prob;
+        for(int i=0;i<DIM;i++){
+            dst[index].x[i] = src[index].x[i];
+        }
+    }
+}
+
+/** Take snapshot */
+static __device__ void takeSnapshot(int offset, int iterations, int* recordIndex, Snapshot* snapshots, Grid* grid, Model* model, double time){
     // check if should perform the record according to the record divider
     int mod = *recordIndex % model->recordDivider;
     if(mod == model->recordSelected) {
         // compute destination index
-        int snapshootIndex = *recordIndex / model->recordDivider;
+        int snapshotIndex = *recordIndex / model->recordDivider;
 
         // copy usedList
-        parallelMemCopy(grid->usedList, snapshoots[snapshootIndex].usedList, grid->usedSize * sizeof(UsedListEntry));
+        parallelMemCopy(grid->usedList, snapshots[snapshotIndex].usedList, grid->usedSize * sizeof(UsedListEntry));
+
         // copy heap
-        parallelMemCopy(grid->heap, snapshoots[snapshootIndex].heap, grid->size * sizeof(Cell));
+        parallelSnapshotCellsCopy(offset, iterations, grid->heap, snapshots[snapshotIndex].heap);
     
         // update used size and time
         if(threadIdx.x == 0 && blockIdx.x == 0){
-            snapshoots[snapshootIndex].time = time;
-            snapshoots[snapshootIndex].usedSize = grid->usedSize;    
+            snapshots[snapshotIndex].time = time;
+            snapshots[snapshotIndex].usedSize = grid->usedSize;
         }    
     }
     
@@ -1126,4 +1141,4 @@ static __device__ void takeSnapshoot(int* recordIndex, Snapshoot* snapshoots, Gr
 /**
  * @brief Dummy kernel to check maximum teoretical concurrent threads
  */
-__global__ void dummyKernel(int iterations, Model model, Global global, Snapshoot* snapshoots){}
+__global__ void dummyKernel(int iterations, Model model, Global global, Snapshot* snapshots){}

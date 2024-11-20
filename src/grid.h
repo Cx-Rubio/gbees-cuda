@@ -33,16 +33,26 @@ struct __align__(8) Cell {
     int32_t state[DIM];
     uint32_t iNodes[DIM];
     uint32_t kNodes[DIM];
-    uint32_t pad;
     double prob;
     double v[DIM];
     double ctu[DIM];    
-    double x[DIM];    
+    double x[DIM];
     double dcu;
     double cfl_dt;
     double bound_val;    
     bool deleted;
 };
+
+/** Snapshot Cell */
+typedef struct {
+#ifdef SINGLE_PRECISION_SNAPSHOTS
+    float prob;
+    float x[DIM];
+#else
+    double prob;
+    double x[DIM];
+#endif
+} SnapshotCell;
 
 /** Hash table entry */
 typedef struct __align__(4) {
@@ -58,13 +68,13 @@ typedef struct __align__(4) {
     uint32_t hashTableIndex;
 } UsedListEntry;
 
-/** Snapshoot data structure */
+/** Snapshot data structure */
 typedef struct __align__(8) {
     double time;
     uint32_t usedSize;
     UsedListEntry* usedList;
-    Cell* heap;     
-} Snapshoot;
+    SnapshotCell* heap;
+} Snapshot;
 
 /** Grid data structure */
 typedef struct __align__(8) {
@@ -124,50 +134,50 @@ void allocGridDevice(uint32_t size, Grid* grid, Grid** gridDevice);
 void freeGridDevice(Grid* grid, Grid* gridDevice);
 
 /**
- * @brief Alloc snapshoots in host memory
+ * @brief Alloc snapshots in host memory
  * 
- * @param snapshoots snapshoots host pointer
+ * @param snapshots snapshots host pointer
  * @param model model pointer
  */
-void allocSnapshootsHost(Snapshoot** snapshoots, Model* model);
+void allocSnapshotsHost(Snapshot** snapshots, Model* model);
 
 /**
- * @brief Alloc snapshoots in device memory
+ * @brief Alloc snapshots in device memory
  * 
  * @param gridSize maximum grid size
- * @param snapshoots snapshoots host pointer
- * @param snapshootsDevice snapshoots device pointer
+ * @param snapshots snapshots host pointer
+ * @param snapshotsDevice snapshots device pointer
  * @param model model pointer
  */
-void allocSnapshootsDevice(uint32_t gridSize, Snapshoot* snapshoots, Snapshoot** snapshootsDevice, Model* model);
+void allocSnapshotsDevice(uint32_t gridSize, Snapshot* snapshots, Snapshot** snapshotsDevice, Model* model);
 
 /**
- * @brief Initialize snapshoots in device memory 
+ * @brief Initialize snapshots in device memory 
  * 
- * @param snapshoots snapshoots host pointer
- * @param snapshootsDevice snapshoots device pointer
+ * @param snapshots snapshots host pointer
+ * @param snapshotsDevice snapshots device pointer
  * @param model model pointer
  */
-void initializeSnapshootsDevice(Snapshoot* snapshootsHost, Snapshoot* snapshootsDevice, Model* model);
+void initializeSnapshotsDevice(Snapshot* snapshotsHost, Snapshot* snapshotsDevice, Model* model);
 
 /**
- * @brief Free snapshoots host memory
+ * @brief Free snapshots host memory
  * 
- * @param snapshoots snapshoots host pointer
+ * @param snapshots snapshots host pointer
  * @param performRecord if should perform record
  * @param model model pointer
  */
-void freeSnapshootsHost(Snapshoot* snapshoots, Model* model);
+void freeSnapshotsHost(Snapshot* snapshots, Model* model);
 
 /**
  * @brief Free snapshoos device memory
  * 
- * @param snapshoots snapshoots host pointer
- * @param snapshootsDevice snapshoots device pointer
+ * @param snapshots snapshots host pointer
+ * @param snapshotsDevice snapshots device pointer
  * @param performRecord if should perform record
  * @param model model pointer
  */
-void freeSnapshootsDevice(Snapshoot* snapshoots, Snapshoot* snapshootsDevice, Model* model);
+void freeSnapshotsDevice(Snapshot* snapshots, Snapshot* snapshotsDevice, Model* model);
 
 /**
  * @brief Initialize hashtable and free list in host and copy to device
