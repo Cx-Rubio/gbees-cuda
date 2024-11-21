@@ -175,6 +175,9 @@ static __device__ uint32_t getIndex(int offset, int iteration){
  * @param global global memory data
  */
 __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshot* snapshots){
+    // clock base for runtime measurement
+    unsigned long long start = clock64();
+    
     // grid synchronization
     cg::grid_group g = cg::this_grid(); 
 
@@ -210,7 +213,8 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshot
        int stepCount = 1; // step count
         
        if(model.performOutput){
-            LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt);
+            unsigned long long time = clock64();
+            LOG("Timestep: %d-%d, Runtime cycles: %ld, Sim. time: %f", nm, stepCount,time-start, tt);
             LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);                
         }
         
@@ -268,14 +272,16 @@ __global__ void gbeesKernel(int iterations, Model model, Global global, Snapshot
                 }
             
                 if (model.performOutput && (stepCount % model.outputPeriodSteps == 0)) { // print size to terminal
-                    LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount, tt + mt + rt);
+                    unsigned long long time = clock64();
+                    LOG("Timestep: %d-%d, Runtime cycles: %ld, Sim. time: %f", nm, stepCount,time-start, tt + mt + rt);
                     LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size); 
                 }
                 stepCount++;
             } // while(rt < recordTime)
 
             if (((stepCount-1) % model.outputPeriodSteps != 0) && model.performOutput){ // print size to terminal  
-                LOG("Timestep: %d-%d, Sim. time: %f", nm, stepCount-1, tt + mt + rt);
+                unsigned long long time = clock64();
+                LOG("Timestep: %d-%d, Runtime cycles: %ld, Sim. time: %f", nm, stepCount-1,time-start, tt + mt + rt);
                 LOG(" TU, Used Cells: %d/%d\n", global.grid->usedSize, global.grid->size);
             }
             

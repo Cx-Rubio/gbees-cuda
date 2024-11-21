@@ -92,6 +92,7 @@ void printDevice(int device){
     printf("  max simultaneous theads %d\n", prop.maxThreadsPerMultiProcessor * prop.multiProcessorCount);
     printf("  shared memory per block %lu\n", prop.sharedMemPerBlock);
     printf("  shared memory per multiprocessor %lu\n", prop.sharedMemPerMultiprocessor);    
+    printf("  clock rate (kHz) %d\n", prop.clockRate);
 
     size_t freeMemory;
     size_t totalMemory;
