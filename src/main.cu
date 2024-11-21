@@ -17,6 +17,7 @@
 #include "models/lorenz3D.h"
 #include "models/pcr3bp.h"
 #include "models/cr3bp.h"
+#include "models/lorenz6D.h"
 
 /** Register ctrl-C handler */
 static void registerSignalHandlers(void);
@@ -104,6 +105,7 @@ static void executeGbees(int device){
     configureLorenz3D(&model);
     //configurePcr3bp(&model);
     //configureCr3bp(&model);
+    //configureLorenz6D(&model);
     
     // allocate measurements memory
     int numMeasurements = model.numMeasurements;
