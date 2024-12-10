@@ -1,13 +1,11 @@
 
 # GBEES-CUDA
 
-GBEES-CUDA is the CUDA implementation of the Grid-based Bayesian Estimation Exploiting Sparsity (GBEES) algorithm.
+GBEES-CUDA is the CUDA implementation of the Grid-based Bayesian Estimation Exploiting Sparsity (GBEES) algorithm.\
 GBEES is a method for propagating uncertainty in systems with nonlinear dynamics. It also allows Bayesian updates of the probability density function based on discrete measurements.
-A detailed description of the GBEES algorithm is available in *Efficient Grid-Based Bayesian Estimation of Nonlinear Low-Dimensional Systems with Sparse, Non-Gaussian PDFs," Automatica 48 (7) (2012) 1286–1290.*
-The rationale for its CUDA implementation can be found in *GBEES-GPU: A High-Dimensional Efficient Parallel GPU Algorithm for Nonlinear Uncertainty Propagation," by T. R. Bewley et al.*
 
 ## Download the source code
-From a computer with a git client installed, clone the repository by using:
+In a computer with the git client installed, clone the repository by using:
 
 ```
 git clone https://github.com/Cx-Rubio/gbees-cuda.git
@@ -36,16 +34,16 @@ Therefore, the launch configuration strategy is to keep the number of cells proc
 ## Model configuration
 
 The models (the specific problems to solve), are defined in the models folder. Each model should populate the model structure similarly to the CPU implementation documented [here](https://bhanson10.github.io/GBEES-hash.pdf).
-Additionally, the recordDivider field allows saving only a fraction of the record distributions, while the recordSelected field specifies which fraction of the total records is recorded.
+Additionally, the *recordDivider* field allows saving only a fraction of the record distributions, while the *recordSelected* field specifies which fraction of the total records is recorded.
 
 ## Compile
-The software is developed and tested only in Linux. Before compile it is needed yo have installed the NVIDIA CUDA toolkit. In Ubuntu can be done by:
+The software is developed and tested only in Linux. Before compile it is needed to have installed the NVIDIA CUDA toolkit. In Ubuntu can be done by:
 ```
 sudo apt install nvidia-cuda-toolkit
 ```
-Before compile, edit the **_makefile_** and adjust the *CUDAFLAGS* according to the architecture level of the target GPU. The option *-maxrregcount = 32* should also be included to limit the number of registers used by each thread.
+Edit the ***_makefile_*** and adjust the *CUDAFLAGS* according to the architecture level of the target GPU. The option *-maxrregcount = 32* should be included to limit the number of registers used by each thread.
 
-Finally, compile to generate the executable by using:
+Compile to generate the executable by using:
 
 ```
 make clean; make all
@@ -53,12 +51,12 @@ make clean; make all
 
 ## Execute
 
-After running the `make` command, the program can be executed with:
+After running the `make all` command, the program can be executed with:
 ```
 ./GBEES
 ```
 
-Currently, four example models are implemented. Users can select a model by editing the main.cu file, uncommenting the desired model configuration, and commenting out the others.
+Currently, four example models are implemented. Users can select a model by editing the ***main.cu*** file, uncommenting the desired model configuration, and commenting out the others.
 
 ```
     configureLorenz3D(&model);
@@ -66,11 +64,14 @@ Currently, four example models are implemented. Users can select a model by edit
     //configureCr3bp(&model);
     //configureLorenz6D(&model);
 ```
--The above configuration solves the original 3D Lorenz model.
--Other models can be selected by uncommenting their respective lines.
+The above configuration solves the original 3D Lorenz model.\
+Other models can added by the user in the models folder.
 
-## Directory architecture
-This section provides a brief introduction to the directory architecture required for GBEES. For a thorough explanation, please refer to the detailed documentation available [here](https://bhanson10.github.io/GBEES-hash.pdf).
+## Directory structure and file formats
+The location of the measurement files and the results folder for each model can be configured by modifying the model definition in the source code. For the example models, the measurements folder is configured as ***./measurements/$modelName***, and the output is configured as the ***./results*** folder.
+
+This section offers a brief overview of the measurement and output formats. For a comprehensive explanation, please consult the detailed documentation available [here](https://bhanson10.github.io/GBEES-hash.pdf).
+
 ### 1- Measurement files
 
 The structure of a measurement `.txt` file must strictly adhere to the required format for GBEES to process it correctly. Measurements are zero-indexed:
@@ -110,14 +111,9 @@ In which:
 - The dimensionality of the mean vector and covariance matrix can vary as long as the format is consistent.
 
 
-### PDFs
+### 2- Output files (PDF snapshots)
 
-GBEES-CUDA outputs non-Gaussian PDFs as `.txt` files, just like it reads measurements in `.txt` format. The PDFs are separated by measurement updates: - After the first measurement update (`measurement_0.txt`), PDFs are stored in `.../P0`. - When the second measurement update (`measurement_1.txt`) occurs, PDFs are stored in `.../P1`, and so on.
-
-Prior to running GBEES, ensure the appropriate number of `P#` folders exist: - The number of measurements must match the number of subfolders (e.g., `P0`, `P1`, etc.). - All subfolders should be in the same parent directory.
-
-Within each `P#` folder:
-- PDFs are zero-indexed: `pdf_0.txt`, `pdf_1.txt`, etc.
+GBEES-CUDA outputs non-Gaussian Probability Density Functions (PDFs) as `.txt` files, just like it reads measurements in `.txt` format. The PDFs are separated by measurement updates. PDFs are stored in the specified output folder with the name ***PX_pdf_Y.pdf***, where X is the number of mesurement (starting with zero) and Y is the number of snapshot for this measurement (also starting with zero).
 
 From the 3D Lorenz example, the first PDF file saved in `/gbees-cuda/results/` might look like:
 ```
@@ -140,3 +136,10 @@ in the example:
 - **Second cell**: 
 	- Probability: `1.0562682633e-05`
 	- State values (x, y, z): `-14.5, -12.0, 9.0`
+
+### References
+ A detailed description of the GBEES algorithm is available in:\
+*Efficient Grid-Based Bayesian Estimation of Nonlinear Low-Dimensional Systems with Sparse, Non-Gaussian PDFs," Automatica 48 (7) (2012) 1286–1290, by T. R. Bewley, et al.* https://doi.org/10.1016/j.automatica.2012.02.039 \
+
+ The rationale of the CUDA implementation can be found in:\
+*GBEES-GPU: A High-Dimensional Efficient Parallel GPU Algorithm for Nonlinear Uncertainty Propagation, by B. Hanson, et al.*
