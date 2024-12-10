@@ -999,8 +999,7 @@ static __device__ void updateDcu(Cell* cell, Grid* grid, GridDefinition* gridDef
         }
         
         if(iCell != NULL){
-            double vUpstream = iCell->v[i]; // original implementation
-            // double vUpstream = 0.5*(iCell->v[i] + cell->v[i]); // corrected implementation (valid only for equispaced meshes)
+            double vUpstream = iCell->v[i];            
             dcu_m = uPlus(vUpstream) * iCell->prob + uMinus(vUpstream) * cell->prob;
         }
         cell->dcu -= (gridDefinition->dt/gridDefinition->dx[i])*(dcu_p-dcu_m);             
