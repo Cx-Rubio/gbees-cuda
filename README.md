@@ -33,7 +33,7 @@ Therefore, the launch configuration strategy is to keep the number of cells proc
 
 ## Model configuration
 
-The models (the specific problems to solve), are defined in the models folder. Each model should populate the model structure similarly to the CPU implementation documented [here](https://bhanson10.github.io/GBEES-hash.pdf).
+The models (the specific problems to solve), are defined in the models folder. Each model should populate the model structure similarly to the CPU implementation documented [here](https://bhanson10.github.io/gbees.pdf).
 Additionally, the *recordDivider* field allows saving only a fraction of the record distributions, while the *recordSelected* field specifies which fraction of the total records is recorded.
 
 ## Compile
@@ -70,7 +70,7 @@ Other models can added by the user in the models folder.
 ## Directory structure and file formats
 The location of the measurement files and the results folder for each model can be configured by modifying the model definition in the source code. For the example models, the measurements folder is configured as ***./measurements/$modelName***, and the output is configured as the ***./results*** folder.
 
-This section offers a brief overview of the measurement and output formats. For a comprehensive explanation, please consult the detailed documentation available [here](https://bhanson10.github.io/GBEES-hash.pdf).
+This section offers a brief overview of the measurement and output formats. For a comprehensive explanation, please consult the detailed documentation available [here](https://bhanson10.github.io/gbees.pdf).
 
 ### 1- Measurement files
 
