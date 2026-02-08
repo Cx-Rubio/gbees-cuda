@@ -21,7 +21,7 @@
 /** Size of the hashtable with respect the maximum number of cells*/
 #define HASH_TABLE_RATIO 2
 
-/**  Left uncommented for single precission in the snapshots, comment it for double precision */
+/**  Left uncommented for single precision in the snapshots, comment it for double precision */
 #define SINGLE_PRECISION_SNAPSHOTS
 
 #endif
