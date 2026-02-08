@@ -6,5 +6,7 @@
 *.cubin
 *.fatbin
 *.project
+.idea
+CMakeLists.txt
 GBEES
 results/*pdf*.txt

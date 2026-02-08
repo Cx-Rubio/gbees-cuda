@@ -272,7 +272,7 @@ static void insertKey(int32_t* key, HashTableEntry* hashtable, UsedListEntry* us
    uint32_t capacity = HASH_TABLE_RATIO * gridSize;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;
+        uint32_t hashIndex = (uint32_t)(((uint64_t)hash + counter) % capacity);
         if(hashtable[hashIndex].usedIndex == NULL_REFERENCE){            
             uint32_t usedIndex = *usedSizePtr;
             
@@ -363,7 +363,7 @@ __device__ void insertCell(Cell* cell, Grid* grid){
    uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
     for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;
+        uint32_t hashIndex = (uint32_t)(((uint64_t)hash + counter) % capacity);
         if(grid->table[hashIndex].usedIndex == NULL_REFERENCE){            
             uint32_t usedIndex = grid->usedSize;
             
@@ -402,7 +402,7 @@ __device__ void insertCellConcurrent(Cell* cell, Grid* grid, GridDefinition* gri
     uint32_t capacity = HASH_TABLE_RATIO * grid->size;  
 
     for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;                
+        uint32_t hashIndex = (uint32_t)(((uint64_t)hash + counter) % capacity);
          
         // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
         uint32_t existingUsedIndex = atomicCAS( &grid->table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);
@@ -463,7 +463,7 @@ __device__ void insertHashConcurrent(HashTableEntry* hashEntry, HashTableEntry* 
     uint32_t newUsedIndex = hashEntry->usedIndex;
     
     for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;                
+        uint32_t hashIndex = (uint32_t)(((uint64_t)hash + counter) % capacity);
          
         // check if the hashtable slot is free. If is free reserve with the RESERVED value, if not free obtain the current used index
         uint32_t existingUsedIndex = atomicCAS( &table[hashIndex].usedIndex, NULL_REFERENCE, RESERVED);        
@@ -495,7 +495,7 @@ __device__ void deleteCell(int32_t* state, Grid* grid){
    uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;
+       uint32_t hashIndex = (uint32_t)(((uint64_t)hash + counter) % capacity);
         if(grid->table[hashIndex].usedIndex != NULL_REFERENCE && equalState(grid->table[hashIndex].key, state)){ // if not deleted and match state
             uint32_t usedIndex = grid->table[hashIndex].usedIndex;
             uint32_t usedHeap = grid->usedList[usedIndex].heapIndex;
@@ -532,7 +532,7 @@ __device__ uint32_t findCell(int32_t* state, Grid* grid){
    uint32_t capacity = HASH_TABLE_RATIO * grid->size;
    
    for(uint32_t counter = 0; counter < capacity; counter++){
-        uint32_t hashIndex = (hash + counter) % capacity;        
+        uint32_t hashIndex = (uint32_t)(((uint64_t)hash + counter) % capacity);
         if(grid->table[hashIndex].usedIndex != NULL_REFERENCE && equalState(grid->table[hashIndex].key, state)){ // if exists and match state
             return grid->table[hashIndex].usedIndex;
         }
